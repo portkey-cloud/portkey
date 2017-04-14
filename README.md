@@ -29,9 +29,9 @@ spec could be leveraged so that a s/fdef would automatically turn validation on 
 Once a fn is mounted we can automatically update it each time it or one of
 its direct or indirect deps change!
 
-## Master plans
+## Master plan
 
-First step:
+First steps:
 
  1. Borrow Ouroboros from Powderkeg (only class access matters, var tracking is irrelevant in a first time).
  2. Starting from a fn, serialize it using Kryo and a custom SerializerFactory to log all classes traversed during serialization. We also need to log all serialized vars.
@@ -49,6 +49,7 @@ Next steps:
  * var meta can provide hints for params naming.
  * support other backends than AWS Lambda
  * S3 buckets as Clojure references?
+ * Track methods usage and narrow the deps graphs (bonus: remove unused methods from classes)
  
 ## License
 
