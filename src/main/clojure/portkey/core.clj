@@ -93,7 +93,7 @@
 ; shim for ouroboros
 (require 'no.disassemble)
 (defn bytecode [class]
-  (prn class)
+  (println "Retrieving bytecode of" class)
   (get (@#'no.disassemble/classes) (@#'no.disassemble/sanitize (if (class? class) (.getCanonicalName class) class))))
 
 (def default-whitelist 
