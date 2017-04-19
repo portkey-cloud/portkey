@@ -2,6 +2,9 @@
 
 (def ^:dynamic *log-dep* (constantly nil))
 
+(defn- canon [^Class c]
+  (.replace (.getCanonicalName c) \. \/))
+
 (defn log-dep [type x]
   (*log-dep*
     (case type
