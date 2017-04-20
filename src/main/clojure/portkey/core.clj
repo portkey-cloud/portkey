@@ -1,58 +1,9 @@
-(ns portkey.core)
+(ns portkey.core
+  (:require
+    [portkey.kryo :as kryo]
+    [portkey.logdep :refer [log-dep *log-dep*]]))
 
-(def ^:dynamic *log-dep* (constantly nil))
 
-(defn- canon [^Class c]
-  (.replace (.getCanonicalName c) \. \/))
-
-(defn log-dep [type x]
-  (*log-dep*
-    (case type
-     :var x
-     :class (canon x)
-     :var-ref (resolve x) ; TODO warn on nil
-     :class-name x)))
-
-(defn- ^com.esotericsoftware.kryo.Kryo mk-kryo []
-  (let [default-factory (com.esotericsoftware.kryo.factories.ReflectionSerializerFactory. com.esotericsoftware.kryo.serializers.FieldSerializer)
-        wrapped-factory
-        (reify com.esotericsoftware.kryo.factories.SerializerFactory
-          (makeSerializer [_ k class]
-            (log-dep :class class)
-            (.makeSerializer default-factory k class)))]
-    (doto (com.esotericsoftware.kryo.Kryo.)
-      (.setClassLoader (clojure.lang.RT/baseLoader))
-      (.addDefaultSerializer clojure.lang.Var
-        (portkey.SerializerStub.
-          (fn [_ k ^com.esotericsoftware.kryo.io.Input input type]
-            (read-string (.readString input)))
-          (fn [_ k ^com.esotericsoftware.kryo.io.Output output v]
-            (log-dep :var v)
-            (.writeString output (binding [*print-dup* true]
-                                   (pr-str v))))))
-      (.addDefaultSerializer clojure.lang.LazySeq
-        com.esotericsoftware.kryo.serializers.FieldSerializer)
-      (.addDefaultSerializer clojure.lang.Iterate
-        com.esotericsoftware.kryo.serializers.FieldSerializer)
-      (.addDefaultSerializer clojure.lang.LongRange
-        com.esotericsoftware.kryo.serializers.FieldSerializer)
-      (.addDefaultSerializer clojure.lang.Range
-        com.esotericsoftware.kryo.serializers.FieldSerializer)
-      (.setDefaultSerializer wrapped-factory))))
-
-(defn freeze [x]
-  (let [classes (atom #{})
-        vars (atom #{})
-        kryo (mk-kryo)
-        baos (java.io.ByteArrayOutputStream.)]
-    (with-open [out (com.esotericsoftware.kryo.io.Output. baos)]
-      (.writeClassAndObject kryo out x))
-    (.toByteArray baos)))
-
-(defn unfreeze [^bytes bytes]
-  (let [kryo (mk-kryo)]
-    (->> bytes java.io.ByteArrayInputStream. com.esotericsoftware.kryo.io.Input.
-     (.readClassAndObject kryo))))
 
 ; code to generate boiler plate
 #_(for [method (.getMethods clojure.asm.MethodVisitor)
@@ -107,7 +58,7 @@
   ([root bytecode whitelist?]
     (let [deps (atom [])]
       (binding [*log-dep* #(swap! deps conj %)]
-        (let [root-bytes (freeze root)]
+        (let [root-bytes (kryo/freeze root)]
           (loop [todo (set @deps) vars {} classes #{}]
             (reset! deps [])
             (if-some [dep (first todo)]
@@ -115,10 +66,19 @@
                 (cond
                   (or (whitelist? dep) (vars dep) (classes dep)) (recur todo vars classes)
                   (var? dep)
-                  (let [bytes (freeze @dep)]
+                  (let [bytes (kryo/freeze @dep)]
                     (recur (into todo @deps) (assoc vars dep bytes) classes))
                   (string? dep)
                   (do
                     (inspect-class (bytecode dep))
                     (recur (into todo @deps) vars (conj classes dep)))))
               {:vars vars :classes classes :root root-bytes})))))))
+
+(defn bootstrap
+  "Returns a serialized thunk (0-arg fn). This thunk when called returns deserialized root with all vars set."
+  [{:keys [root vars]}]
+  (kryo/freeze
+    (fn []
+     (doseq [[^clojure.lang.Var v bs] vars]
+       (.bindRoot v (kryo/unfreeze bs)))
+     (kryo/unfreeze root))))
