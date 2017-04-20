@@ -6,8 +6,8 @@
   :plugins [[lein-nodisassemble "0.1.3"]] ; remove when ouroboros
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [com.esotericsoftware/kryo "3.0.3"]
-                 #_[com.twitter/carbonite "1.4.0"
-                   :exclusions [com.esotericsoftware.kryo/kryo]]
+                 [com.twitter/carbonite "1.4.0"
+                 :exclusions [com.esotericsoftware.kryo/kryo]]
                  [com.amazonaws/aws-java-sdk "1.11.63"]
                  [com.amazonaws/aws-lambda-java-core "1.1.0"]]
   :java-source-paths ["src/main/java"]
