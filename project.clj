@@ -3,8 +3,8 @@
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :plugins [[lein-nodisassemble "0.1.3"]] ; remove when ouroboros
-  :dependencies [[org.clojure/clojure "1.8.0"]
+  :dependencies [[org.ow2.asm/asm "5.2"]
+                 [org.clojure/clojure "1.9.0-alpha15"]
                  [com.esotericsoftware/kryo "3.0.3"]
                  [com.twitter/carbonite "1.4.0"
                  :exclusions [com.esotericsoftware.kryo/kryo]]

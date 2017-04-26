@@ -56,70 +56,70 @@
 
 ;; modify the bytecode of clojure.lang.Var to log var changes
 (defn watch-vars [bytes]
-  (let [rdr (clojure.asm.ClassReader. bytes)
-        cw (clojure.asm.ClassWriter. 0)
+  (let [rdr (org.objectweb.asm.ClassReader. bytes)
+        cw (org.objectweb.asm.ClassWriter. 0)
         class-visitor
-        (proxy [clojure.asm.ClassVisitor] [clojure.asm.Opcodes/ASM4 cw]
+        (proxy [org.objectweb.asm.ClassVisitor] [org.objectweb.asm.Opcodes/ASM4 cw]
           (visitMethod [access method-name mdesc sig exs]
             (let [mv (.visitMethod cw access method-name mdesc sig exs)]
               (cond
                 (= [method-name mdesc] ["<init>" "(Lclojure/lang/Namespace;Lclojure/lang/Symbol;Ljava/lang/Object;)V"])
-                (proxy [clojure.asm.MethodVisitor] [clojure.asm.Opcodes/ASM4 mv]
+                (proxy [org.objectweb.asm.MethodVisitor] [org.objectweb.asm.Opcodes/ASM4 mv]
                   (visitFieldInsn [opcode owner name desc]
                     ; emit original store
                     (.visitFieldInsn mv opcode owner name desc)
-                    (when (= [clojure.asm.Opcodes/PUTSTATIC owner name]
+                    (when (= [org.objectweb.asm.Opcodes/PUTSTATIC owner name]
                             [opcode "clojure/lang/Var" "rev"])
                       (doto mv
                         ; get the var
                         (.visitLdcInsn "portkey.ouroboros")
                         (.visitLdcInsn "log-var-change")
-                        (.visitMethodInsn clojure.asm.Opcodes/INVOKESTATIC "clojure/java/api/Clojure" "var" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IFn;")
+                        (.visitMethodInsn org.objectweb.asm.Opcodes/INVOKESTATIC "clojure/java/api/Clojure" "var" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IFn;")
                         ; push args
-                        (.visitVarInsn clojure.asm.Opcodes/ALOAD 1)
-                        (.visitVarInsn clojure.asm.Opcodes/ALOAD 2)                        ; call fn
-                        (.visitMethodInsn clojure.asm.Opcodes/INVOKEINTERFACE "clojure/lang/IFn" "invoke" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+                        (.visitVarInsn org.objectweb.asm.Opcodes/ALOAD 1)
+                        (.visitVarInsn org.objectweb.asm.Opcodes/ALOAD 2)                        ; call fn
+                        (.visitMethodInsn org.objectweb.asm.Opcodes/INVOKEINTERFACE "clojure/lang/IFn" "invoke" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
                         ; discard return value
-                        (.visitInsn clojure.asm.Opcodes/POP)))))
+                        (.visitInsn org.objectweb.asm.Opcodes/POP)))))
                 (= [method-name mdesc] ["<init>" "(Lclojure/lang/Namespace;Lclojure/lang/Symbol;)V"])
-                (proxy [clojure.asm.MethodVisitor] [clojure.asm.Opcodes/ASM4 mv]
+                (proxy [org.objectweb.asm.MethodVisitor] [org.objectweb.asm.Opcodes/ASM4 mv]
                   (visitCode []
                     (.visitCode mv)
                     (doto mv
                       ; get the var
                       (.visitLdcInsn "portkey.ouroboros")
                       (.visitLdcInsn "log-var-change")
-                      (.visitMethodInsn clojure.asm.Opcodes/INVOKESTATIC "clojure/java/api/Clojure" "var" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IFn;")
+                      (.visitMethodInsn org.objectweb.asm.Opcodes/INVOKESTATIC "clojure/java/api/Clojure" "var" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IFn;")
                       ; push args
-                      (.visitVarInsn clojure.asm.Opcodes/ALOAD 1)
-                      (.visitVarInsn clojure.asm.Opcodes/ALOAD 2)                        ; call fn
-                      (.visitMethodInsn clojure.asm.Opcodes/INVOKEINTERFACE "clojure/lang/IFn" "invoke" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+                      (.visitVarInsn org.objectweb.asm.Opcodes/ALOAD 1)
+                      (.visitVarInsn org.objectweb.asm.Opcodes/ALOAD 2)                        ; call fn
+                      (.visitMethodInsn org.objectweb.asm.Opcodes/INVOKEINTERFACE "clojure/lang/IFn" "invoke" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
                       ; discard return value
-                      (.visitInsn clojure.asm.Opcodes/POP))))
+                      (.visitInsn org.objectweb.asm.Opcodes/POP))))
                 :else
-                (proxy [clojure.asm.MethodVisitor] [clojure.asm.Opcodes/ASM4 mv]
+                (proxy [org.objectweb.asm.MethodVisitor] [org.objectweb.asm.Opcodes/ASM4 mv]
                   (visitFieldInsn [opcode owner name desc]
                     ; emit original store
                     (.visitFieldInsn mv opcode owner name desc)
-                    (when (= [clojure.asm.Opcodes/PUTSTATIC owner name]
+                    (when (= [org.objectweb.asm.Opcodes/PUTSTATIC owner name]
                             [opcode "clojure/lang/Var" "rev"])
                       (cond
                         (= "<init>" method-name) (throw (ex-info "Unexpected constructor" {:desc mdesc}))
-                        (zero? (bit-and clojure.asm.Opcodes/ACC_STATIC access))
+                        (zero? (bit-and org.objectweb.asm.Opcodes/ACC_STATIC access))
                         (doto mv
                           ; get the var
                           (.visitLdcInsn "portkey.ouroboros")
                           (.visitLdcInsn "log-var-change")
-                          (.visitMethodInsn clojure.asm.Opcodes/INVOKESTATIC "clojure/java/api/Clojure" "var" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IFn;")
+                          (.visitMethodInsn org.objectweb.asm.Opcodes/INVOKESTATIC "clojure/java/api/Clojure" "var" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IFn;")
                           ; push args
-                          (.visitVarInsn clojure.asm.Opcodes/ALOAD 0)
-                          (.visitFieldInsn clojure.asm.Opcodes/GETFIELD "clojure/lang/Var" "ns" "Lclojure/lang/Namespace;")
-                          (.visitVarInsn clojure.asm.Opcodes/ALOAD 0)
-                          (.visitFieldInsn clojure.asm.Opcodes/GETFIELD "clojure/lang/Var" "sym" "Lclojure/lang/Symbol;")
+                          (.visitVarInsn org.objectweb.asm.Opcodes/ALOAD 0)
+                          (.visitFieldInsn org.objectweb.asm.Opcodes/GETFIELD "clojure/lang/Var" "ns" "Lclojure/lang/Namespace;")
+                          (.visitVarInsn org.objectweb.asm.Opcodes/ALOAD 0)
+                          (.visitFieldInsn org.objectweb.asm.Opcodes/GETFIELD "clojure/lang/Var" "sym" "Lclojure/lang/Symbol;")
                           ; call fn
-                          (.visitMethodInsn clojure.asm.Opcodes/INVOKEINTERFACE "clojure/lang/IFn" "invoke" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+                          (.visitMethodInsn org.objectweb.asm.Opcodes/INVOKEINTERFACE "clojure/lang/IFn" "invoke" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
                           ; discard return value
-                          (.visitInsn clojure.asm.Opcodes/POP))
+                          (.visitInsn org.objectweb.asm.Opcodes/POP))
                         (= "<clinit>" method-name) nil
                         :else (throw (ex-info "Unexpected static method" {:name method-name :desc mdesc}))))))))))]
     (.accept rdr class-visitor 0)
@@ -196,16 +196,28 @@
 
 (when-not *compile-files*
   (binding [*out* *err*]
-    (println "Counting classes.")
-     (let [all-classes (.getAllLoadedClasses portkey.Agent/instrumentation)
-           _ (prn (count all-classes))
-           all-dyn-classes (into-array Class (filter #(instance? clojure.lang.DynamicClassLoader (.getClassLoader ^Class %)) all-classes))]
-       (print "Retrieving bytecode of" (count all-dyn-classes) "classes dynamically defined by Clojure (out of" (count all-classes) "classes)... ")
-       (.addTransformer portkey.Agent/instrumentation no-transform true)
-       (.retransformClasses portkey.Agent/instrumentation all-dyn-classes)
-       (println "done!"))
-    
-     (print "Instrumenting clojure.lang.Var... ")
-     (.addTransformer portkey.Agent/instrumentation var-transform true)
-     (.retransformClasses portkey.Agent/instrumentation (into-array [clojure.lang.Var]))
-     (println "done!")))
+    (print "Instrumenting clojure.lang.Var... ")
+    (.addTransformer portkey.Agent/instrumentation var-transform true)
+    (.retransformClasses portkey.Agent/instrumentation (into-array [clojure.lang.Var]))
+    (.removeTransformer portkey.Agent/instrumentation var-transform)
+    (println "done!")))
+
+(def ^:dynamic *bytes*)
+
+(def peek-bytes-transform
+  "ClassFileTransfomer to retrieve bytes."
+  (reify java.io.Serializable
+    java.lang.instrument.ClassFileTransformer
+    (transform [_ loader classname class domain bytes]
+      (when (bound? #'*bytes*)
+        (set! *bytes* (assoc *bytes* class (aclone bytes)))))))
+
+(when-not *compile-files*
+  (.addTransformer portkey.Agent/instrumentation peek-bytes-transform true))
+
+(defn bytecode
+  "Returns a map of classes to bytes."
+  [classes]
+  (binding [*bytes* {}]
+    (.retransformClasses portkey.Agent/instrumentation (into-array Class classes))
+    *bytes*))

@@ -9,6 +9,5 @@
   (*log-dep*
     (case type
      :var x
-     :class (canon x)
-     :var-ref (resolve x) ; TODO warn on nil
-     :class-name x)))
+     :class x
+     :var-ref (resolve x)))) ; TODO warn on nil
