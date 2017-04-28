@@ -68,7 +68,7 @@
 
 (def default-whitelist 
   #(if (var? %)
-     (some-> % meta :ns ns-name (= 'clojure.core))
+     (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'carbonite.serializer})
      (re-matches #"(?:clojure\.(?:lang\.|java\.|core\$)|java\.|com\.esotericsoftware\.kryo\.).*" (.getName %))))
 
 (defn bom
@@ -96,12 +96,15 @@
 
 (defn bootstrap
   "Returns a serialized thunk (0-arg fn). This thunk when called returns deserialized root with all vars set."
-  [{:keys [root vars]}]
-  (kryo/freeze
-    (fn []
-     (doseq [[^clojure.lang.Var v bs] vars]
-       (.bindRoot v (kryo/unfreeze bs)))
-     (kryo/unfreeze root))))
+  [{:keys [root vars classes]}]
+  (let [bom' (bom
+               (fn []
+                 (doseq [[^clojure.lang.Var v bs] vars]
+                   (.bindRoot v (kryo/unfreeze bs)))
+                 (kryo/unfreeze root)))]
+    (when-some [new-vars (seq (remove vars (:vars bom')))]
+      (throw (ex-info "The boostrap function shouldn't use any new var." {:new-vars new-vars})))
+    (update bom' :classes into classes)))
 
 (defn zip! 
   "Writes a zip to out."
@@ -159,10 +162,9 @@
   "Writes f as AWS Lambda deployment packge to out.
    f must be a function of 3 arguments: input, output and context. (See RequestHandler)"
   [out f]
-  (let [{:as deps :keys [classes]} (bom f)
-        bootstrap-bytes (bootstrap deps)
+  (let [{:keys [classes root]} (bootstrap (bom f))
         entries (-> support-entries
-                  (assoc "bootstrap.kryo" bootstrap-bytes)
+                  (assoc "bootstrap.kryo" root)
                   (into (class-entries classes)))]
     (zip! out entries)
     out))
