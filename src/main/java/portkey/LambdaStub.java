@@ -18,7 +18,7 @@ public class LambdaStub implements RequestStreamHandler {
         IFn unfreeze = Clojure.var("portkey.kryo", "unfreeze");
         try {
              ClassLoader classLoader = LambdaStub.class.getClassLoader();
-             URL resource = classLoader.getResource("/bootstrap.kryo");
+             URL resource = classLoader.getResource("bootstrap.kryo");
              handler = resource != null ? (IFn) ((IFn) unfreeze.invoke(resource)).invoke() : null;
         } catch (Exception e) {
             throw (e instanceof RuntimeException) ? (RuntimeException) e : new RuntimeException(e);
