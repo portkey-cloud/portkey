@@ -6,25 +6,6 @@
     [clojure.java.io :as io]
     [portkey.logdep :refer [log-dep *log-dep*]]))
 
-(def ^:private own-deps
-  (let [system-jars (into #{}
-                      (comp
-                        (map #(java.io.File. (.toURI %)))
-                        (filter #(and (.isFile %) (.endsWith (.getName %) ".jar"))))
-                      (.getURLs (java.lang.ClassLoader/getSystemClassLoader)))
-        coords (into []
-                 (comp
-                   (map #(.getName %))
-                   (keep #(re-matches #"(kryo|clojure|carbonite)-(\d+\.\d+\.\d+(?:-.*)?)\.jar" %))
-                   (map (fn [[_ p v]] [(symbol ({"clojure" "org.clojure"
-                                                 "kryo" "com.esotericsoftware"
-                                                 "carbonite" "com.twitter"} p) p) v])))
-                 system-jars)]
-    (into {}
-      (map (fn [file] [(str "lib/" (.getName file)) file]))
-      (mvn/dependency-files (mvn/resolve-dependencies :retrieve true :coordinates coords
-                              :repositories (assoc mvn/maven-central "clojars" "http://clojars.org/repo"))))))
-
 ; code to generate boiler plate
 #_(for [method (.getMethods org.objectweb.asm.MethodVisitor)
        :when (and (re-matches #"visit.*Insn" (.getName method))
@@ -42,7 +23,9 @@
 
 (defn inspect-class [class]
   (let [classloader (.getClassLoader class)
-       log-classname #(when-not (primitive? %) (log-dep :class (Class/forName (.replace ^String % \/ \.) false classloader)))
+       log-classname #(cond
+                        (.endsWith % "[]") (recur (subs % 0 (- (count %) 2)))
+                        (not (primitive? %)) (log-dep :class (Class/forName (.replace ^String % \/ \.) false classloader)))
        bytes (bytecode class)
        rdr (org.objectweb.asm.ClassReader. bytes)
        class-visitor
@@ -86,11 +69,12 @@
 (def default-whitelist 
   #(if (var? %)
      (some-> % meta :ns ns-name (= 'clojure.core))
-     (re-matches #"(?:clojure\.lang|java)\..*" (.getName %))))
+     (re-matches #"(?:clojure\.(?:lang\.|java\.|core\$)|java\.|com\.esotericsoftware\.kryo\.).*" (.getName %))))
 
-(defn package 
+(defn bom
+  "Computes the bill-of-materials for an object."
   ([root]
-    (package root default-whitelist))
+    (bom root default-whitelist))
   ([root whitelist?]
     (let [deps (atom [])]
       (binding [*log-dep* #(swap! deps conj %)]
@@ -137,10 +121,53 @@
         (reduce-kv (fn [^String dir ^String path data]
                      (let [dir (emit-dirs dir path)]
                        (.putNextEntry zip (java.util.zip.ZipEntry. path))
-                       (io/copy data zip)
+                       (with-open [in (io/input-stream data)] (io/copy in zip))
                        dir)) "" entries-map)))))
 
-#_(zip! "out.zip" own-deps)
+
+(def ^:private support-deps
+  (let [system-jars (into #{}
+                      (comp
+                        (map #(java.io.File. (.toURI %)))
+                        (filter #(and (.isFile %) (.endsWith (.getName %) ".jar"))))
+                      (.getURLs (java.lang.ClassLoader/getSystemClassLoader)))
+        coords (into []
+                 (comp
+                   (map #(.getName %))
+                   (keep #(re-matches #"(kryo|clojure|carbonite)-(\d+\.\d+\.\d+(?:-.*)?)\.jar" %))
+                   (map (fn [[_ p v]] [(symbol ({"clojure" "org.clojure"
+                                                 "kryo" "com.esotericsoftware"
+                                                 "carbonite" "com.twitter"} p) p) v])))
+                 system-jars)]
+    (into {}
+      (map (fn [file] [(str "lib/" (.getName file)) file]))
+      (mvn/dependency-files (mvn/resolve-dependencies :retrieve true :coordinates coords
+                              :repositories (assoc mvn/maven-central "clojars" "http://clojars.org/repo"))))))
+
+(defn class-entries [classes]
+  (into {}
+    (for [^Class class classes]
+      [(str (.replace (.getCanonicalName class) \. \/) ".class") (bytecode class)])))
+
+(def ^:private support-entries
+  (-> support-deps
+    (into (for [clj ["portkey/logdep.clj" "portkey/kryo.clj"]]
+            [clj (.getResource (.getContextClassLoader (Thread/currentThread)) clj)]))
+    (into (class-entries (conj (:classes (bom portkey.LambdaStub)) portkey.SerializerStub)))))
+
+(defn package!
+  "Writes f as AWS Lambda deployment packge to out.
+   f must be a function of 3 arguments: input, output and context. (See RequestHandler)"
+  [out f]
+  (let [{:as deps :keys [classes]} (bom f)
+        bootstrap-bytes (bootstrap deps)
+        entries (-> support-entries
+                  (assoc "bootstrap.kryo" bootstrap-bytes)
+                  (into (class-entries classes)))]
+    (zip! out entries)
+    out))
+
+#_(deployment-package prn)
 
 #_(def stub
    (reify com.amazonaws.services.lambda.runtime.RequestStreamHandler
