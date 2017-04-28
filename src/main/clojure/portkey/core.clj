@@ -1,10 +1,29 @@
 (ns portkey.core
   (:require
     [portkey.ouroboros :as ou]
+    [cemerick.pomegranate.aether :as mvn]
     [portkey.kryo :as kryo]
+    [clojure.java.io :as io]
     [portkey.logdep :refer [log-dep *log-dep*]]))
 
-
+(def ^:private own-deps
+  (let [system-jars (into #{}
+                      (comp
+                        (map #(java.io.File. (.toURI %)))
+                        (filter #(and (.isFile %) (.endsWith (.getName %) ".jar"))))
+                      (.getURLs (java.lang.ClassLoader/getSystemClassLoader)))
+        coords (into []
+                 (comp
+                   (map #(.getName %))
+                   (keep #(re-matches #"(kryo|clojure|carbonite)-(\d+\.\d+\.\d+(?:-.*)?)\.jar" %))
+                   (map (fn [[_ p v]] [(symbol ({"clojure" "org.clojure"
+                                                 "kryo" "com.esotericsoftware"
+                                                 "carbonite" "com.twitter"} p) p) v])))
+                 system-jars)]
+    (into {}
+      (map (fn [file] [(str "lib/" (.getName file)) file]))
+      (mvn/dependency-files (mvn/resolve-dependencies :retrieve true :coordinates coords
+                              :repositories (assoc mvn/maven-central "clojars" "http://clojars.org/repo"))))))
 
 ; code to generate boiler plate
 #_(for [method (.getMethods org.objectweb.asm.MethodVisitor)
@@ -100,7 +119,31 @@
        (.bindRoot v (kryo/unfreeze bs)))
      (kryo/unfreeze root))))
 
+(defn zip! 
+  "Writes a zip to out."
+  [out entries]
+  (let [entries-map (into (sorted-map) entries)]
+    (with-open [out (io/output-stream out)
+                zip (java.util.zip.ZipOutputStream. out)]
+      (letfn [(^String emit-dirs [^String dir ^String path]
+                (if-not (.startsWith path dir)
+                  (recur (subs dir 0 (inc (.lastIndexOf dir "/" (- (count dir) 2)))) path)
+                  (let [i (.indexOf path "/" (count dir))]
+                    (if (neg? i)
+                      dir
+                      (let [dir (subs path 0 (inc i))]
+                        (.putNextEntry zip (java.util.zip.ZipEntry. dir))
+                        (recur dir path))))))]
+        (reduce-kv (fn [^String dir ^String path data]
+                     (let [dir (emit-dirs dir path)]
+                       (.putNextEntry zip (java.util.zip.ZipEntry. path))
+                       (io/copy data zip)
+                       dir)) "" entries-map)))))
+
+#_(zip! "out.zip" own-deps)
+
 #_(def stub
    (reify com.amazonaws.services.lambda.runtime.RequestStreamHandler
      (handleRequest [_ in out ctx]
        (prn in out ctx))))
+
