@@ -152,7 +152,7 @@
 (defn class-entries [classes]
   (into {}
     (for [^Class class classes]
-      [(str (.replace (.getCanonicalName class) \. \/) ".class") (bytecode class)])))
+      [(str (.replace (or (.getCanonicalName class) (.getName class)) \. \/) ".class") (bytecode class)])))
 
 (def ^:private support-entries
   (-> support-deps
