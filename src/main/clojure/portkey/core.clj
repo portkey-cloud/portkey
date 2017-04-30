@@ -138,9 +138,11 @@
                  (comp
                    (map #(.getName %))
                    (keep #(re-matches #"(kryo|clojure|carbonite)-(\d+\.\d+\.\d+(?:-.*)?)\.jar" %))
-                   (map (fn [[_ p v]] [(symbol ({"clojure" "org.clojure"
-                                                 "kryo" "com.esotericsoftware"
-                                                 "carbonite" "com.twitter"} p) p) v])))
+                   (map (fn [[_ p v]]
+                          (cond-> [(symbol ({"clojure" "org.clojure"
+                                            "kryo" "com.esotericsoftware"
+                                            "carbonite" "com.twitter"} p) p) v]
+                            (= p "carbonite") (into '[:exclusions [com.esotericsoftware.kryo/kryo]])))))
                  system-jars)]
     (into {}
       (map (fn [file] [(str "lib/" (.getName file)) file]))
