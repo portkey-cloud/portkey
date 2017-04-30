@@ -25,9 +25,9 @@
   (let [classloader (.getClassLoader class)
        log-classname #(cond
                         (.endsWith % "[]") (recur (subs % 0 (- (count %) 2)))
-                        (not (primitive? %)) (try
-                                               (log-dep :class (Class/forName (.replace ^String % \/ \.) false classloader))
-                                               (catch Throwable t)))
+                        (not (primitive? %)) (when-some [class (try (Class/forName (.replace ^String % \/ \.) false classloader)
+                                                                 (catch ClassNotFoundException _))]
+                                               (log-dep :class class)))
        bytes (bytecode class)
        rdr (org.objectweb.asm.ClassReader. bytes)
        class-visitor
