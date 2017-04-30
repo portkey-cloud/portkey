@@ -1,7 +1,8 @@
 (ns portkey.core-test
   (:require [clojure.test :refer :all]
     [clojure.java.io :as io]
-    [portkey.core :as pk]))
+    [portkey.core :as pk]
+    [cemerick.pomegranate.aether :as mvn]))
 
 (defn temp-dir [prefix]
   (let [p (java.io.File. (System/getProperty "java.io.tmpdir"))
@@ -40,6 +41,18 @@
        (finally
          (.setContextClassLoader (Thread/currentThread) cl#)))))
 
+(defn create-deps-class-loader [deps parent]
+  (java.net.URLClassLoader.
+    (into-array java.net.URL
+      (map #(.toURL (.toURI ^java.io.File %))
+        (mvn/dependency-files (mvn/resolve-dependencies :retrieve true :coordinates deps
+                                :repositories (assoc mvn/maven-central "clojars" "http://clojars.org/repo")))))
+    parent))
+
+(defmacro with-deps [deps & body]
+  `(with-context-cl (create-deps-class-loader '~deps (.getContextClassLoader (Thread/currentThread)))
+     (eval '(do ~@body))))
+
 (deftest echo
   (testing "echo"
     (let [msg "hello world"
@@ -52,3 +65,6 @@
         (with-context-cl cl
           (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes msg "utf-8")) bos nil))
         (is (= msg (String. (.toByteArray bos) "utf-8")))))))
+
+#_(with-deps [[joda-time/joda-time "2.9.9"]]
+   (prn (org.joda.time.Instant/now)))
