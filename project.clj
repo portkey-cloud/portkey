@@ -10,6 +10,7 @@
                  :exclusions [com.esotericsoftware.kryo/kryo]]
                  [com.amazonaws/aws-java-sdk "1.11.63"]
                  [com.amazonaws/aws-lambda-java-core "1.1.0"]
-                 [com.cemerick/pomegranate "0.3.1" :exclusions [org.apache.httpcomponents/httpcore]]]
+                 [com.cemerick/pomegranate "0.3.1"]
+                 [org.apache.httpcomponents/httpcore "4.4.6"]]
   :java-source-paths ["src/main/java"]
   :source-paths ["src/main/clojure"])
