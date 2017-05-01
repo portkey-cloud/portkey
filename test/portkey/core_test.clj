@@ -66,5 +66,17 @@
           (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes msg "utf-8")) bos nil))
         (is (= msg (String. (.toByteArray bos) "utf-8")))))))
 
-#_(with-deps [[joda-time/joda-time "2.9.9"]]
-   (prn (org.joda.time.Instant/now)))
+(deftest with-joda-time
+  (let [millis 0
+        zip (java.io.File/createTempFile "portkey-package" "zip")]
+    (.deleteOnExit zip)
+    (pk/package! zip (with-deps [[joda-time/joda-time "2.9.9"]]
+                       (fn [in out ctx]
+                         (spit out (.getMillis (org.joda.time.Instant. 0))))))
+    (let [^ClassLoader cl (create-class-loader (unzip zip))
+          bos (java.io.ByteArrayOutputStream.)
+          lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
+      (is (not (instance? portkey.LambdaStub lambda))) ; checking isolation
+      (with-context-cl cl
+        (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes "" "utf-8")) bos nil))
+      (is (= millis (Integer/parseInt (String. (.toByteArray bos) "utf-8")))))))
