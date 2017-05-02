@@ -50,8 +50,9 @@
     parent))
 
 (defmacro with-deps [deps & body]
-  `(with-context-cl (create-deps-class-loader '~deps (.getContextClassLoader (Thread/currentThread)))
-     (eval '(do ~@body))))
+  (let [args (into [] (filter symbol?) (keys &env))]
+    `(with-context-cl (create-deps-class-loader '~deps (.getContextClassLoader (Thread/currentThread)))
+       ((eval '(fn ~args ~@body)) ~@args))))
 
 (deftest echo
   (testing "echo"
@@ -67,16 +68,18 @@
         (is (= msg (String. (.toByteArray bos) "utf-8")))))))
 
 (deftest with-joda-time
-  (let [millis 0
+  (let [millis (System/currentTimeMillis)
         zip (java.io.File/createTempFile "portkey-package" "zip")]
     (.deleteOnExit zip)
     (pk/package! zip (with-deps [[joda-time/joda-time "2.9.9"]]
                        (fn [in out ctx]
-                         (spit out (.getMillis (org.joda.time.Instant. 0))))))
+                         ; FIXME: without the type hint below we get a reflective call and the
+                         ; test fail because a class is missing
+                         (spit out (.getMillis (org.joda.time.Instant. ^long millis))))))
     (let [^ClassLoader cl (create-class-loader (unzip zip))
           bos (java.io.ByteArrayOutputStream.)
           lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
       (is (not (instance? portkey.LambdaStub lambda))) ; checking isolation
       (with-context-cl cl
         (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes "" "utf-8")) bos nil))
-      (is (= millis (Integer/parseInt (String. (.toByteArray bos) "utf-8")))))))
+      (is (= millis (Long/parseLong (String. (.toByteArray bos) "utf-8")))))))
