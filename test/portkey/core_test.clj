@@ -31,10 +31,13 @@
           (recur))))
       dir)))
 
-(defn create-class-loader [^java.io.File dir]
+(defn create-classloader [^java.io.File dir]
   (let [urls (map #(-> ^java.io.File % .toURI .toURL)
                (cons dir (.listFiles (java.io.File. dir "lib"))))]
     (java.net.URLClassLoader. (into-array urls) nil)))
+
+(defmacro with-compiler-cl [cl & body]
+  `(with-bindings {clojure.lang.Compiler/LOADER ~cl} ~@body))
 
 (defmacro with-context-cl [cl & body]
   `(let [cl# (.getContextClassLoader (Thread/currentThread))]
@@ -43,7 +46,7 @@
        (finally
          (.setContextClassLoader (Thread/currentThread) cl#)))))
 
-(defn create-deps-class-loader [deps parent]
+(defn create-deps-classloader [deps parent]
   (java.net.URLClassLoader.
     (into-array java.net.URL
       (map #(.toURL (.toURI ^java.io.File %))
@@ -53,8 +56,9 @@
 
 (defmacro with-deps [deps & body]
   (let [args (into [] (filter symbol?) (keys &env))]
-    `(with-context-cl (create-deps-class-loader '~deps (.getContextClassLoader (Thread/currentThread)))
-       ((eval '(fn ~args ~@body)) ~@args))))
+    `(with-compiler-cl (create-deps-classloader '~deps (clojure.lang.RT/baseLoader))
+       (binding [*ns* (find-ns '~(ns-name *ns*))]
+         ((eval '(fn ~args ~@body)) ~@args)))))
 
 (defn invoke
   "Invokes f packaged as a lambda and isolated in a distinct class loader.
@@ -65,10 +69,11 @@
     (let [zip (java.io.File/createTempFile "portkey-core-test" "zip")]
       (.deleteOnExit zip)
       (pk/package! zip f)
-      (let [^ClassLoader cl (create-class-loader (unzip zip))
+      (let [^ClassLoader cl (create-classloader (unzip zip))
             bos (java.io.ByteArrayOutputStream.)
             lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
-        (assert (not (instance? portkey.LambdaStub lambda))) ; checking isolation
+        (when (instance? portkey.LambdaStub lambda) ; checking isolation
+          (throw (ex-info "Containment has been breached.")))
         (with-context-cl cl
           (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes in-as-string "utf-8")) bos nil))
         (String. (.toByteArray bos) "utf-8")))))
@@ -81,8 +86,18 @@
 (deftest with-joda-time
   (testing "joda-time"
     (let [millis (System/currentTimeMillis)]
-    (is (= millis
-          (Long/parseLong
-            (invoke (with-deps [[joda-time/joda-time "2.9.9"]]
-                      (fn [in out ctx]
-                        (spit out (.getMillis (org.joda.time.Instant. millis))))) "")))))))
+      (is (= millis
+            (Long/parseLong
+              (invoke (with-deps [[joda-time/joda-time "2.9.9"]]
+                        (fn [in out ctx]
+                          (spit out (.getMillis (org.joda.time.Instant. millis))))))))))))
+
+(deftest with-hadoop-core
+  (testing "hadoop-core"
+    (let [dir "/tmp"
+          file "1.txt"
+          path "/tmp/1.txt"]
+      (is (= path
+            (with-deps [[org.apache.hadoop/hadoop-core "1.2.1"]]
+              (invoke (fn [in out ctx]
+                        (spit out (org.apache.hadoop.fs.Path. dir file))))))))))
