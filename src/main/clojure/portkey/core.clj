@@ -83,7 +83,7 @@
 
 (defn- bootstrap-class? [^Class class]
   (if-some [cl (.getClassLoader class)]
-    (identical? cl (.getParent (ClassLoader/getSystemClassLoader))) ; not sure, which JVM does not returns null?
+    (identical? cl (.getClassLoader Class)) ; in case a JVM does not return null for boostrap
     true))
 
 (def default-whitelist
