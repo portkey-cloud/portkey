@@ -71,7 +71,7 @@
 (def default-whitelist 
   #(if (var? %)
      (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'carbonite.serializer})
-     (re-matches #"(?:clojure\.(?:lang\.|java\.|core\$)|java\.|com\.esotericsoftware\.kryo\.).*" (.getName %))))
+     (re-matches #"(?:clojure\.(?:lang\.|java\.|core\$)|java\.|com\.esotericsoftware\.kryo\.|sun\.).*" (.getName %))))
 
 (defn bom
   "Computes the bill-of-materials for an object."
