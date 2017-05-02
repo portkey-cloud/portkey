@@ -72,13 +72,23 @@
                      (= name "var")
                      (= desc "(Ljava/lang/String;Ljava/lang/String;)Lclojure/lang/Var;")
                      (<= 2 (count @strs))) ; TODO warn when less than 2
-                   (do
-                     (log-dep :var-ref (symbol (peek (pop @strs)) (peek @strs)))
-                     (reset! strs []))
+                   (log-dep :var-ref (symbol (peek (pop @strs)) (peek @strs)))
+                   (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
+                     (= owner "clojure/lang/RT")
+                     (= name "classForName")
+                     (= desc "(Ljava/lang/String;)Ljava/lang/Class;")
+                     (<= 1 (count @strs)))
+                   (log-classname (peek @strs))
                    (or (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
                      (and (= opcode org.objectweb.asm.Opcodes/INVOKESPECIAL) (= "<init>" name)))
-                   (log-classname owner)))
-               (visitInsn [G__4852] (clojure.core/reset! strs [])) (visitIntInsn [G__4853 G__4854] (clojure.core/reset! strs [])) (visitFieldInsn [G__4855 G__4856 G__4857 G__4858] (clojure.core/reset! strs [])) (visitVarInsn [G__4859 G__4860] (clojure.core/reset! strs [])) (visitIincInsn [G__4861 G__4862] (clojure.core/reset! strs [])) (visitJumpInsn [G__4863 G__4864] (clojure.core/reset! strs [])) (visitTableSwitchInsn [G__4865 G__4866 G__4867 G__4868] (clojure.core/reset! strs [])) (visitLookupSwitchInsn [G__4869 G__4870 G__4871] (clojure.core/reset! strs [])) (visitInvokeDynamicInsn [G__4872 G__4873 G__4874 G__4875] (clojure.core/reset! strs [])) (visitTypeInsn [G__4876 G__4877] (clojure.core/reset! strs [])) (visitMultiANewArrayInsn [G__4878 G__4879] (clojure.core/reset! strs []))))))]
+                   (log-classname owner))
+                 (reset! strs []))
+               (visitFieldInsn [opcode owner name desc]
+                 (when (or (= opcode org.objectweb.asm.Opcodes/GETSTATIC)
+                         (= opcode org.objectweb.asm.Opcodes/PUTSTATIC))
+                   (log-classname owner))
+                 (reset! strs []))
+               (visitInsn [G__4852] (clojure.core/reset! strs [])) (visitIntInsn [G__4853 G__4854] (clojure.core/reset! strs [])) (visitVarInsn [G__4859 G__4860] (clojure.core/reset! strs [])) (visitIincInsn [G__4861 G__4862] (clojure.core/reset! strs [])) (visitJumpInsn [G__4863 G__4864] (clojure.core/reset! strs [])) (visitTableSwitchInsn [G__4865 G__4866 G__4867 G__4868] (clojure.core/reset! strs [])) (visitLookupSwitchInsn [G__4869 G__4870 G__4871] (clojure.core/reset! strs [])) (visitInvokeDynamicInsn [G__4872 G__4873 G__4874 G__4875] (clojure.core/reset! strs [])) (visitTypeInsn [G__4876 G__4877] (clojure.core/reset! strs [])) (visitMultiANewArrayInsn [G__4878 G__4879] (clojure.core/reset! strs []))))))]
    (.accept rdr class-visitor 0)))
 
 (defn- bootstrap-class? [^Class class]

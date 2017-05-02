@@ -73,9 +73,7 @@
     (.deleteOnExit zip)
     (pk/package! zip (with-deps [[joda-time/joda-time "2.9.9"]]
                        (fn [in out ctx]
-                         ; FIXME: without the type hint below we get a reflective call and the
-                         ; test fail because a class is missing
-                         (spit out (.getMillis (org.joda.time.Instant. ^long millis))))))
+                         (spit out (.getMillis (org.joda.time.Instant. millis))))))
     (let [^ClassLoader cl (create-class-loader (unzip zip))
           bos (java.io.ByteArrayOutputStream.)
           lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
