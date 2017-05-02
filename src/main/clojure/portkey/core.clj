@@ -15,19 +15,32 @@
    `(~name [~@args]
       (reset! ~'strs [])))
 
+(defn- resource-name [^Class class]
+  (str (.replace (.getName class) \. \/) ".class"))
+
+(defn- get-bytes [in]
+  (let [bos (java.io.ByteArrayOutputStream.)]
+    (with-open [in (io/input-stream in)]
+      (io/copy in bos))
+    (.toByteArray bos)))
+
 (defn bytecode [class]
-  (or (get (ou/bytecode [class]) class)
+  (or
+    (some-> (.getClassLoader class) (.getResource (resource-name class)) get-bytes)
+    (get (ou/bytecode [class]) class)
     (throw (ex-info "Can't find" {:class class}))))
 
 (def primitive? #{"void" "int" "byte" "short" "long" "char" "boolean" "float" "double"})
 
-(defn inspect-class [class]
+(defn inspect-class [^Class class]
   (let [classloader (.getClassLoader class)
-       log-classname #(cond
-                        (.endsWith % "[]") (recur (subs % 0 (- (count %) 2)))
-                        (not (primitive? %)) (when-some [class (try (Class/forName (.replace ^String % \/ \.) false classloader)
-                                                                 (catch ClassNotFoundException _))]
-                                               (log-dep :class class)))
+       log-classname #(when-some [classname (if-some [[_ t] (re-matches #"\[+(?:[ZBCDFIJS]|L(.*);)" %)]
+                                              t
+                                              (when-not (primitive? %)
+                                                (.replace ^String % \/ \.)))]
+                        (when-some [class (try (Class/forName classname false classloader)
+                                            (catch ClassNotFoundException _))]
+                          (log-dep :class class)))
        bytes (bytecode class)
        rdr (org.objectweb.asm.ClassReader. bytes)
        class-visitor
@@ -36,14 +49,14 @@
            (log-classname supername)
            (doseq [iface ifaces]
              (log-classname iface)))
-         (visitField [access name desc sig value]
+         (visitField [access name ^String desc sig value]
            (log-classname (.getClassName (org.objectweb.asm.Type/getType desc)))
            nil)
          (visitMethod [access method-name mdesc sig exs]
            (let [strs (atom [])
                  mtype (org.objectweb.asm.Type/getMethodType mdesc)]
              (log-classname (.getClassName (.getReturnType mtype)))
-             (doseq [type (.getArgumentTypes mtype)]
+             (doseq [^org.objectweb.asm.Type type (.getArgumentTypes mtype)]
                (log-classname (.getClassName type)))
              (doseq [ex exs]
                (log-classname ex))
@@ -68,10 +81,16 @@
                (visitInsn [G__4852] (clojure.core/reset! strs [])) (visitIntInsn [G__4853 G__4854] (clojure.core/reset! strs [])) (visitFieldInsn [G__4855 G__4856 G__4857 G__4858] (clojure.core/reset! strs [])) (visitVarInsn [G__4859 G__4860] (clojure.core/reset! strs [])) (visitIincInsn [G__4861 G__4862] (clojure.core/reset! strs [])) (visitJumpInsn [G__4863 G__4864] (clojure.core/reset! strs [])) (visitTableSwitchInsn [G__4865 G__4866 G__4867 G__4868] (clojure.core/reset! strs [])) (visitLookupSwitchInsn [G__4869 G__4870 G__4871] (clojure.core/reset! strs [])) (visitInvokeDynamicInsn [G__4872 G__4873 G__4874 G__4875] (clojure.core/reset! strs [])) (visitTypeInsn [G__4876 G__4877] (clojure.core/reset! strs [])) (visitMultiANewArrayInsn [G__4878 G__4879] (clojure.core/reset! strs []))))))]
    (.accept rdr class-visitor 0)))
 
-(def default-whitelist 
+(defn- bootstrap-class? [^Class class]
+  (if-some [cl (.getClassLoader class)]
+    (identical? cl (.getParent (ClassLoader/getSystemClassLoader))) ; not sure, which JVM does not returns null?
+    true))
+
+(def default-whitelist
   #(if (var? %)
      (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'carbonite.serializer})
-     (re-matches #"(?:clojure\.(?:lang\.|java\.|core\$)|java\.|com\.esotericsoftware\.kryo\.|sun\.).*" (.getName %))))
+     (or (bootstrap-class? %)
+       (re-matches #"(?:clojure\.(?:lang\.|java\.|core\$)|com\.esotericsoftware\.kryo\.).*" (.getName ^Class %)))))
 
 (defn bom
   "Computes the bill-of-materials for an object."
@@ -79,22 +98,22 @@
     (bom root default-whitelist))
   ([root whitelist?]
     (let [deps (atom [])]
-      (binding [*log-dep* #(swap! deps conj %)]
+      (binding [*log-dep* #(when-not (whitelist? %) (swap! deps conj %))]
         (let [root-bytes (kryo/freeze root)]
-          (loop [todo (set @deps) vars {} classes #{}]
-            (reset! deps [])
-            (if-some [dep (first todo)]
-              (let [todo (disj todo dep)]
-                (cond
-                  (or (whitelist? dep) (vars dep) (classes dep)) (recur todo vars classes)
-                  (var? dep)
-                  (let [bytes (kryo/freeze @dep)]
-                    (recur (into todo @deps) (assoc vars dep bytes) classes))
-                  (class? dep)
-                  (do
-                    (inspect-class dep)
-                    (recur (into todo @deps) vars (conj classes dep)))))
-              {:vars vars :classes classes :root root-bytes})))))))
+          (loop [todo #{} vars {} classes #{}]
+            (let [todo (into todo (comp (remove vars) (remove classes)) @deps)]
+              (reset! deps [])
+              (if-some [dep (first todo)]
+                (let [todo (disj todo dep)]
+                  (cond
+                    (var? dep)
+                    (let [bytes (kryo/freeze @dep)]
+                      (recur todo (assoc vars dep bytes) classes))
+                    (class? dep)
+                    (do
+                      (inspect-class dep)
+                      (recur todo vars (conj classes dep)))))
+                {:vars vars :classes classes :root root-bytes}))))))))
 
 (defn bootstrap
   "Returns a serialized thunk (0-arg fn). This thunk when called returns deserialized root with all vars set."
@@ -129,16 +148,15 @@
                        (with-open [in (io/input-stream data)] (io/copy in zip))
                        dir)) "" entries-map)))))
 
-
 (def ^:private support-deps
   (let [system-jars (into #{}
                       (comp
-                        (map #(java.io.File. (.toURI %)))
-                        (filter #(and (.isFile %) (.endsWith (.getName %) ".jar"))))
-                      (.getURLs (java.lang.ClassLoader/getSystemClassLoader)))
+                        (map #(java.io.File. (.toURI ^java.net.URL %)))
+                        (filter (fn [^java.io.File f] (and (.isFile f) (.endsWith (.getName f) ".jar")))))
+                      (.getURLs ^java.net.URLClassLoader (java.lang.ClassLoader/getSystemClassLoader)))
         coords (into []
                  (comp
-                   (map #(.getName %))
+                   (map #(.getName ^java.io.File %))
                    (keep #(re-matches #"(kryo|clojure|carbonite)-(\d+\.\d+\.\d+(?:-.*)?)\.jar" %))
                    (map (fn [[_ p v]]
                           (cond-> [(symbol ({"clojure" "org.clojure"
@@ -147,14 +165,14 @@
                             (= p "carbonite") (into '[:exclusions [com.esotericsoftware.kryo/kryo]])))))
                  system-jars)]
     (into {}
-      (map (fn [file] [(str "lib/" (.getName file)) file]))
+      (map (fn [^java.io.File file] [(str "lib/" (.getName file)) file]))
       (mvn/dependency-files (mvn/resolve-dependencies :retrieve true :coordinates coords
                               :repositories (assoc mvn/maven-central "clojars" "http://clojars.org/repo"))))))
 
 (defn class-entries [classes]
   (into {}
-    (for [^Class class classes]
-      [(str (.replace (or (.getCanonicalName class) (.getName class)) \. \/) ".class") (bytecode class)])))
+    (for [class classes]
+      [(resource-name class) (bytecode class)])))
 
 (def ^:private support-entries
   (-> support-deps
