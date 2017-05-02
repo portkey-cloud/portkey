@@ -18,9 +18,11 @@
   (with-open [in (io/input-stream input)
               zip (java.util.zip.ZipInputStream. in)]
     (let [dir (temp-dir "portkey-test")]
+      (.deleteOnExit dir)
       (loop []
         (when-some [e (.getNextEntry zip)]
           (let [f (java.io.File. dir (.getName e))]
+            (.deleteOnExit f)
             (if (.isDirectory e)
               (or (.mkdir f)
                 (throw (ex-info (str "can't create dir " f) {:f f :e e})))
@@ -54,30 +56,33 @@
     `(with-context-cl (create-deps-class-loader '~deps (.getContextClassLoader (Thread/currentThread)))
        ((eval '(fn ~args ~@body)) ~@args))))
 
-(deftest echo
-  (testing "echo"
-    (let [msg "hello world"
-          zip (java.io.File/createTempFile "portkey-package" "zip")]
-      (pk/package! zip (fn [in out ctx] (io/copy in out)))
+(defn invoke
+  "Invokes f packaged as a lambda and isolated in a distinct class loader.
+   Input and output are strings."
+  ([f]
+    (invoke f ""))
+  ([f in-as-string]
+    (let [zip (java.io.File/createTempFile "portkey-core-test" "zip")]
+      (.deleteOnExit zip)
+      (pk/package! zip f)
       (let [^ClassLoader cl (create-class-loader (unzip zip))
             bos (java.io.ByteArrayOutputStream.)
             lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
-        (is (not (instance? portkey.LambdaStub lambda))) ; checking isolation
+        (assert (not (instance? portkey.LambdaStub lambda))) ; checking isolation
         (with-context-cl cl
-          (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes msg "utf-8")) bos nil))
-        (is (= msg (String. (.toByteArray bos) "utf-8")))))))
+          (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes in-as-string "utf-8")) bos nil))
+        (String. (.toByteArray bos) "utf-8")))))
+
+(deftest echo
+  (testing "echo"
+    (let [msg "hello world"]
+      (is (= msg (invoke (fn [in out ctx] (io/copy in out)) msg))))))
 
 (deftest with-joda-time
-  (let [millis (System/currentTimeMillis)
-        zip (java.io.File/createTempFile "portkey-package" "zip")]
-    (.deleteOnExit zip)
-    (pk/package! zip (with-deps [[joda-time/joda-time "2.9.9"]]
-                       (fn [in out ctx]
-                         (spit out (.getMillis (org.joda.time.Instant. millis))))))
-    (let [^ClassLoader cl (create-class-loader (unzip zip))
-          bos (java.io.ByteArrayOutputStream.)
-          lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
-      (is (not (instance? portkey.LambdaStub lambda))) ; checking isolation
-      (with-context-cl cl
-        (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes "" "utf-8")) bos nil))
-      (is (= millis (Long/parseLong (String. (.toByteArray bos) "utf-8")))))))
+  (testing "joda-time"
+    (let [millis (System/currentTimeMillis)]
+    (is (= millis
+          (Long/parseLong
+            (invoke (with-deps [[joda-time/joda-time "2.9.9"]]
+                      (fn [in out ctx]
+                        (spit out (.getMillis (org.joda.time.Instant. millis))))) "")))))))
