@@ -197,9 +197,14 @@
 
 (defn package!
   "Writes f as AWS Lambda deployment packge to out.
-   f must be a function of 3 arguments: input, output and context. (See RequestHandler)"
-  [out f]
-  (let [{:keys [classes root]} (bootstrap (bom f))
+   f must be a function of 3 arguments: input, output and context. (See RequestHandler)
+   Additionally, more classes and vars can be specified, focring them to be kept in the
+   package."
+  [out f & keeps]
+  (let [fbom (bom f)
+        bom (transduce (comp (map bom) (map #(dissoc % :root)))
+              (partial merge-with into) fbom keeps)
+        {:keys [classes root]} (bootstrap bom)
         entries (-> support-entries
                   (assoc "bootstrap.kryo" root)
                   (into (class-entries classes)))]
