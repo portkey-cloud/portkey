@@ -4,6 +4,7 @@
     [cemerick.pomegranate.aether :as mvn]
     [portkey.kryo :as kryo]
     [clojure.java.io :as io]
+    [clojure.string :as str]
     [portkey.logdep :refer [log-dep *log-dep*]]))
 
 ; code to generate boiler plate
@@ -200,6 +201,48 @@
                   (into (class-entries classes)))]
     (zip! out entries)
     out))
+
+(defn- atomic? [class]
+  (or (.isAssignableFrom Number class)
+    (= String class)
+    (= Boolean class)))
+
+(defn- as-doto* [^Class class m]
+  (let [setters (reduce (partial merge-with into) {}
+                  (for [m (.getMethods class)
+                        :let [name (.getName m)
+                              params (.getParameterTypes m)]
+                        :when (.startsWith name "set")
+                        :when (= 1 (count params))]
+                    {name #{(aget params 0)}}))
+        setter-call (fn [[k v]]
+                      (let [mname (str/replace (str "set-" (name k)) #"-(.)" (fn [[_ ^String c]] (.toUpperCase c)))
+                            types (setters mname)]
+                        (if (map? v)
+                          (let [types (remove atomic? types)]
+                            (case (count types)
+                              0 (throw (IllegalStateException. (str "No bean for method " mname " on class " class)))
+                              1 `(~(symbol (str "." mname)) ~(as-doto* (first types) v))
+                              (throw (IllegalStateException. (str "Too many overrides for method " mname " on class " class)))))
+                          `(~(symbol (str "." mname)) ~v))))]
+    `(doto (new ~class)
+       ~@(map setter-call m))))
+
+(defmacro ^:private donew [class m]
+  (as-doto* (resolve class) m))
+
+(defn deploy! [f]
+  (let [bb (-> (java.io.ByteArrayOutputStream.)
+             (doto (package! f))
+             .toByteArray
+             java.nio.ByteBuffer/wrap)]
+    ; TODO invoke clientbuilder
+    (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
+      {:function-name "TODO"
+       :handler "portkey.LambdaStub"
+       :code {:zip-file bb}
+       :role "TODO"
+       :runtime "java8"})))
 
 #_(deployment-package prn)
 
