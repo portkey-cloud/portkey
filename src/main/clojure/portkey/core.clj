@@ -69,6 +69,11 @@
                (visitMethodInsn [opcode ^String owner name desc itf]
                  (cond
                    (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
+                     (= owner "java/lang/Class")
+                     (= name "forName"))
+                   (binding [*out* *err*] (println "Blinded by reflection in" owner name desc))
+                   (log-dep :var-ref (symbol (peek (pop @strs)) (peek @strs)))
+                   (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
                      (= owner "clojure/lang/RT")
                      (= name "var")
                      (= desc "(Ljava/lang/String;Ljava/lang/String;)Lclojure/lang/Var;")
