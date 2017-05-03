@@ -228,6 +228,24 @@
     `(doto (new ~class)
        ~@(map setter-call m))))
 
+(defn- aws-name-munge [name]
+  (str/replace name #"(_)|(\.)|(/)|([^a-zA-Z0-9-_])"
+    (fn [[_ underscore dot slash other]]
+      (cond
+        underscore "__"
+        dot "_-"
+        slash "_I"
+        :else (format "_u%04X" (int (.charAt ^String other 0)))))))
+
+(defn- aws-name-unmunge [name]
+  (str/replace name #"_(?:(_)|(-)|(I)|u([0-9a-fA-F]{4}))"
+    (fn [[_ underscore dot slash other]]
+      (cond
+        underscore "_"
+        dot "."
+        slash "/"
+        :else (char (Long/parseLong other 16))))))
+
 (defmacro ^:private donew [class m]
   (as-doto* (resolve class) m))
 
