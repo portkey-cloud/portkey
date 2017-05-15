@@ -11,6 +11,7 @@
                  [com.amazonaws/aws-java-sdk "1.11.63"]
                  [com.amazonaws/aws-lambda-java-core "1.1.0"]
                  [com.cemerick/pomegranate "0.3.1"]
-                 [org.apache.httpcomponents/httpcore "4.4.6"]]
+                 [org.apache.httpcomponents/httpcore "4.4.6"]
+                 [cheshire "5.7.1"]]
   :java-source-paths ["src/main/java"]
   :source-paths ["src/main/clojure"])
