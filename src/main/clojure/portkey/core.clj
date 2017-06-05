@@ -94,7 +94,26 @@
                          (= opcode org.objectweb.asm.Opcodes/PUTSTATIC))
                    (log-classname owner))
                  (reset! strs []))
-               (visitInsn [G__4852] (clojure.core/reset! strs [])) (visitIntInsn [G__4853 G__4854] (clojure.core/reset! strs [])) (visitVarInsn [G__4859 G__4860] (clojure.core/reset! strs [])) (visitIincInsn [G__4861 G__4862] (clojure.core/reset! strs [])) (visitJumpInsn [G__4863 G__4864] (clojure.core/reset! strs [])) (visitTableSwitchInsn [G__4865 G__4866 G__4867 G__4868] (clojure.core/reset! strs [])) (visitLookupSwitchInsn [G__4869 G__4870 G__4871] (clojure.core/reset! strs [])) (visitInvokeDynamicInsn [G__4872 G__4873 G__4874 G__4875] (clojure.core/reset! strs [])) (visitTypeInsn [G__4876 G__4877] (clojure.core/reset! strs [])) (visitMultiANewArrayInsn [G__4878 G__4879] (clojure.core/reset! strs []))))))]
+               (visitInsn [opcode]
+                 (reset! strs []))
+               (visitIntInsn [opcode operand]
+                 (reset! strs []))
+               (visitVarInsn [opcode var]
+                 (reset! strs []))
+               (visitIincInsn [var increment]
+                 (reset! strs []))
+               (visitJumpInsn [opcode label]
+                 (reset! strs []))
+               (visitTableSwitchInsn [min max dflt labels]
+                 (reset! strs []))
+               (visitLookupSwitchInsn [dflt keys labels]
+                 (reset! strs []))
+               (visitInvokeDynamicInsn [name desc bsm bsm-args]
+                 (reset! strs []))
+               (visitTypeInsn [opcode type]
+                 (reset! strs []))
+               (visitMultiANewArrayInsn [desc dims]
+                 (reset! strs []))))))]
    (.accept rdr class-visitor 0)))
 
 (defn- bootstrap-class? [^Class class]
