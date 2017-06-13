@@ -120,7 +120,7 @@
   #(if (var? %)
      (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'carbonite.serializer})
      (or (bootstrap-class? %)
-       (re-matches #"(?:clojure\.(?:lang\.|java\.|core\$)|com\.esotericsoftware\.kryo\.).*" (.getName ^Class %)))))
+       (re-matches #"(?:clojure\.(?:lang\.|java\.|core[\$.])|com\.esotericsoftware\.kryo\.).*" (.getName ^Class %)))))
 
 (def primitive? #{"void" "int" "byte" "short" "long" "char" "boolean" "float" "double"})
 
