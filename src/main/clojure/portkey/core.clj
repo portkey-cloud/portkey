@@ -322,41 +322,46 @@
                .toByteArray
                java.nio.ByteBuffer/wrap)
         function-name (make-function-name f)]
+    (when (->> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
+               (.listRoles)
+               (.getRoles)
+               (filter #(= "portkey" (.getRoleName %)))
+               empty?)
+      (let [role (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
+                     (.createRole (donew com.amazonaws.services.identitymanagement.model.CreateRoleRequest
+                                         {:role-name "portkey"
+                                          :assume-role-policy-document (json/generate-string {:Version "2012-10-17"
+                                                                                              :Statement [{:Effect :Allow
+                                                                                                           :Principal {:Service "lambda.amazonaws.com"}
+                                                                                                           :Action "sts:AssumeRole"}]})})))]
+        (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
+            (.putRolePolicy (donew com.amazonaws.services.identitymanagement.model.PutRolePolicyRequest
+                                   {:role-name "portkey"
+                                    :policy-name "portkey_basic_execution"
+                                    :policy-document (json/generate-string {:Version "2012-10-17"
+                                                                            :Statement [{:Effect :Allow
+                                                                                         :Action "logs:CreateLogGroup"
+                                                                                         :Resource "arn:aws:logs:*:*:*"}
+                                                                                        {:Effect "Allow"
+                                                                                         :Action ["logs:CreateLogStream" "logs:PutLogEvents"]
+                                                                                         :Resource ["arn:aws:logs:*:*:log-group:*:*"]}]})})))))
     (if (->> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
              (.listFunctions)
              (.getFunctions)
              (filter #(= function-name (.getFunctionName %)))
              empty?)
-      (when (->> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
-                 (.listRoles)
-                 (.getRoles)
-                 (filter #(= "portkey" %))
-                 empty?)
-        (let [role (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
-                       (.createRole (donew com.amazonaws.services.identitymanagement.model.CreateRoleRequest
-                                           {:role-name "portkey"
-                                            :assume-role-policy-document (json/generate-string {:Version "2012-10-17"
-                                                                                                :Statement [{:Effect :Allow
-                                                                                                             :Principal {:Service "lambda.amazonaws.com"}
-                                                                                                             :Action "sts:AssumeRole"}]})})))]
-          (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
-              (.putRolePolicy (donew com.amazonaws.services.identitymanagement.model.PutRolePolicyRequest
-                                     {:role-name "portkey"
-                                      :policy-name "portkey_basic_execution"
-                                      :policy-document (json/generate-string {:Version "2012-10-17"
-                                                                              :Statement [{:Effect :Allow
-                                                                                           :Action "logs:CreateLogGroup"
-                                                                                           :Resource "arn:aws:logs:*:*:*"}
-                                                                                          {:Effect "Allow"
-                                                                                           :Action ["logs:CreateLogStream" "logs:PutLogEvents"]
-                                                                                           :Resource ["arn:aws:logs:*:*:log-group:*:*"]}]})})))
-          (.createFunction (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-                           (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
-                                  {:function-name function-name
-                                   :handler "portkey.LambdaStub"
-                                   :code {:zip-file bb}
-                                   :role (-> role .getRole .getArn)
-                                   :runtime "java8"}))))
+      (.createFunction (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+                       (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
+                              {:function-name function-name
+                               :handler "portkey.LambdaStub"
+                               :code {:zip-file bb}
+                               :role (->> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
+                                          (.listRoles)
+                                          (.getRoles)
+                                          (filter #(= "portkey" (.getRoleName %)))
+                                          first
+                                          (.getArn))
+                               :runtime "java8"}))
       (.updateFunctionCode (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                            (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
                                   {:function-name function-name
