@@ -1,5 +1,6 @@
 (ns ^:portkey/no-sync portkey.ouroboros
   "The JVM that instruments itself."
+  (:refer-clojure :exclude [descendants])
   (:require [clojure.java.io :as io]))
 
 (def ^:private no-changes {:classes (sorted-map) :vars #{}
@@ -221,3 +222,7 @@
   (binding [*bytes* {}]
     (.retransformClasses portkey.Agent/instrumentation (into-array Class classes))
     *bytes*))
+
+(defn descendants [^Class class]
+  (when class
+    (eduction (filter #(.isAssignableFrom class %)) (.getAllLoadedClasses portkey.Agent/instrumentation))))

@@ -4,6 +4,7 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.ow2.asm/asm "5.2"]
+                 [org.ow2.asm/asm-analysis "5.2"]
                  [org.clojure/clojure "1.9.0-alpha15"]
                  [com.esotericsoftware/kryo "3.0.3"]
                  [com.twitter/carbonite "1.4.0"

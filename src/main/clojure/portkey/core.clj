@@ -6,7 +6,9 @@
     [clojure.java.io :as io]
     [clojure.string :as str]
     [cheshire.core :as json]
-    [portkey.logdep :refer [log-dep *log-dep*]]))
+    [portkey.logdep :refer [log-dep]]))
+
+(def ^:dynamic ^ClassLoader *classloader* nil)
 
 ; code to generate boiler plate
 #_(for [method (.getMethods org.objectweb.asm.MethodVisitor)
@@ -32,89 +34,82 @@
     (get (ou/bytecode [class]) class)
     (throw (ex-info "Can't find" {:class class}))))
 
-(def primitive? #{"void" "int" "byte" "short" "long" "char" "boolean" "float" "double"})
-
 (defn inspect-class [^Class class]
-  (let [classloader (.getClassLoader class)
-       log-classname #(when-some [classname (if-some [[_ t] (re-matches #"\[+(?:[ZBCDFIJS]|L(.*);)" %)]
-                                              t
-                                              (when-not (primitive? %)
-                                                (.replace ^String % \/ \.)))]
-                        (when-some [class (try (Class/forName classname false classloader)
-                                            (catch ClassNotFoundException _))]
-                          (log-dep :class class)))
-       bytes (bytecode class)
-       rdr (org.objectweb.asm.ClassReader. bytes)
-       class-visitor
-       (proxy [org.objectweb.asm.ClassVisitor] [org.objectweb.asm.Opcodes/ASM4]
-         (visit [version access name sig supername ifaces]
-           (log-classname supername)
-           (doseq [iface ifaces]
-             (log-classname iface)))
-         (visitField [access name ^String desc sig value]
-           (log-classname (.getClassName (org.objectweb.asm.Type/getType desc)))
-           nil)
-         (visitMethod [access method-name mdesc sig exs]
-           (let [strs (atom [])
-                 mtype (org.objectweb.asm.Type/getMethodType mdesc)]
-             (log-classname (.getClassName (.getReturnType mtype)))
-             (doseq [^org.objectweb.asm.Type type (.getArgumentTypes mtype)]
-               (log-classname (.getClassName type)))
-             (doseq [ex exs]
-               (log-classname ex))
-             (proxy [org.objectweb.asm.MethodVisitor] [org.objectweb.asm.Opcodes/ASM4]
-               (visitLdcInsn [x]
-                 (if (string? x)
-                   (swap! strs conj x)
-                   (reset! strs [])))
-               (visitMethodInsn [opcode ^String owner name desc itf]
-                 (cond
-                   (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
-                     (= owner "java/lang/Class")
-                     (= name "forName"))
-                   (binding [*out* *err*] (println "Blinded by reflection in" class method-name mdesc))
-                   (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
-                     (= owner "clojure/lang/RT")
-                     (= name "var")
-                     (= desc "(Ljava/lang/String;Ljava/lang/String;)Lclojure/lang/Var;")
-                     (<= 2 (count @strs))) ; TODO warn when less than 2
-                   (log-dep :var-ref (symbol (peek (pop @strs)) (peek @strs)))
-                   (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
-                     (= owner "clojure/lang/RT")
-                     (= name "classForName")
-                     (= desc "(Ljava/lang/String;)Ljava/lang/Class;")
-                     (<= 1 (count @strs)))
-                   (log-classname (peek @strs))
-                   (or (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
-                     (and (= opcode org.objectweb.asm.Opcodes/INVOKESPECIAL) (= "<init>" name)))
-                   (log-classname owner))
-                 (reset! strs []))
-               (visitFieldInsn [opcode owner name desc]
-                 (when (or (= opcode org.objectweb.asm.Opcodes/GETSTATIC)
-                         (= opcode org.objectweb.asm.Opcodes/PUTSTATIC))
-                   (log-classname owner))
-                 (reset! strs []))
-               (visitInsn [opcode]
-                 (reset! strs []))
-               (visitIntInsn [opcode operand]
-                 (reset! strs []))
-               (visitVarInsn [opcode var]
-                 (reset! strs []))
-               (visitIincInsn [var increment]
-                 (reset! strs []))
-               (visitJumpInsn [opcode label]
-                 (reset! strs []))
-               (visitTableSwitchInsn [min max dflt labels]
-                 (reset! strs []))
-               (visitLookupSwitchInsn [dflt keys labels]
-                 (reset! strs []))
-               (visitInvokeDynamicInsn [name desc bsm bsm-args]
-                 (reset! strs []))
-               (visitTypeInsn [opcode type]
-                 (reset! strs []))
-               (visitMultiANewArrayInsn [desc dims]
-                 (reset! strs []))))))]
-   (.accept rdr class-visitor 0)))
+   (binding [*classloader* (.getClassLoader class)]
+     (let [log-classname #(log-dep :class %)
+           bytes (bytecode class)
+           rdr (org.objectweb.asm.ClassReader. bytes)
+           class-node (doto (org.objectweb.asm.tree.ClassNode.)
+                        (as-> cn  (.accept rdr cn 0)))
+           analyzer (org.objectweb.asm.tree.analysis.Analyzer. (portkey.analysis.UCInterpreter.))]
+       (log-classname (.superName class-node))
+       (doseq [iface (.interfaces class-node)]
+         (log-classname iface))
+       (doseq [^org.objectweb.asm.tree.FieldNode field (.fields class-node)]
+         (log-classname (.getClassName (org.objectweb.asm.Type/getType (.desc field)))))
+       (doseq [^org.objectweb.asm.tree.MethodNode method (.methods class-node)
+               :let [mtype (org.objectweb.asm.Type/getMethodType (.desc method))]]
+         (log-classname (.getClassName (.getReturnType mtype)))
+         (doseq [^org.objectweb.asm.Type type (.getArgumentTypes mtype)]
+           (log-classname (.getClassName type)))
+         (.analyze analyzer (.name class-node) method)))))
+
+#_(defn inspect-class [^Class class]
+   (binding [*classloader* (.getClassLoader class)]
+     (let [log-classname #(log-dep :class %)
+          bytes (bytecode class)
+          rdr (org.objectweb.asm.ClassReader. bytes)
+          class-visitor
+          (proxy [org.objectweb.asm.ClassVisitor] [org.objectweb.asm.Opcodes/ASM4]
+            (visit [version access name sig supername ifaces]
+              (log-classname supername)
+              (doseq [iface ifaces]
+                (log-classname iface)))
+            (visitField [access name ^String desc sig value]
+              (log-classname (.getClassName (org.objectweb.asm.Type/getType desc)))
+              nil)
+            (visitMethod [access method-name mdesc sig exs]
+              (let [strs (atom [])
+                    mtype (org.objectweb.asm.Type/getMethodType mdesc)]
+                (log-classname (.getClassName (.getReturnType mtype)))
+                (doseq [^org.objectweb.asm.Type type (.getArgumentTypes mtype)]
+                  (log-classname (.getClassName type)))
+                (doseq [ex exs]
+                  (log-classname ex))
+                (proxy [org.objectweb.asm.MethodVisitor] [org.objectweb.asm.Opcodes/ASM4]
+                  (visitLdcInsn [x]
+                    (if (string? x)
+                      (swap! strs conj x)
+                      (reset! strs [])))
+                  (visitMethodInsn [opcode ^String owner name desc itf]
+                    (cond
+                      (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
+                        (= owner "java/lang/Class")
+                        (= name "forName"))
+                      (binding [*out* *err*] (println "Blinded by reflection in" class method-name mdesc))
+                      (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
+                        (= owner "clojure/lang/RT")
+                        (= name "var")
+                        (= desc "(Ljava/lang/String;Ljava/lang/String;)Lclojure/lang/Var;")
+                        (<= 2 (count @strs))) ; TODO warn when less than 2
+                      (log-dep :var-ref (symbol (peek (pop @strs)) (peek @strs)))
+                      (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
+                        (= owner "clojure/lang/RT")
+                        (= name "classForName")
+                        (= desc "(Ljava/lang/String;)Ljava/lang/Class;")
+                        (<= 1 (count @strs)))
+                      (log-classname (peek @strs))
+                      (or (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
+                        (and (= opcode org.objectweb.asm.Opcodes/INVOKESPECIAL) (= "<init>" name)))
+                      (log-classname owner))
+                    (reset! strs []))
+                  (visitFieldInsn [opcode owner name desc]
+                    (when (or (= opcode org.objectweb.asm.Opcodes/GETSTATIC)
+                            (= opcode org.objectweb.asm.Opcodes/PUTSTATIC))
+                      (log-classname owner))
+                    (reset! strs []))
+                  (visitInsn [G__4852] (clojure.core/reset! strs [])) (visitIntInsn [G__4853 G__4854] (clojure.core/reset! strs [])) (visitVarInsn [G__4859 G__4860] (clojure.core/reset! strs [])) (visitIincInsn [G__4861 G__4862] (clojure.core/reset! strs [])) (visitJumpInsn [G__4863 G__4864] (clojure.core/reset! strs [])) (visitTableSwitchInsn [G__4865 G__4866 G__4867 G__4868] (clojure.core/reset! strs [])) (visitLookupSwitchInsn [G__4869 G__4870 G__4871] (clojure.core/reset! strs [])) (visitInvokeDynamicInsn [G__4872 G__4873 G__4874 G__4875] (clojure.core/reset! strs [])) (visitTypeInsn [G__4876 G__4877] (clojure.core/reset! strs [])) (visitMultiANewArrayInsn [G__4878 G__4879] (clojure.core/reset! strs []))))))]
+     (.accept rdr class-visitor 0))))
 
 (defn- bootstrap-class? [^Class class]
   (if-some [cl (.getClassLoader class)]
@@ -127,13 +122,35 @@
      (or (bootstrap-class? %)
        (re-matches #"(?:clojure\.(?:lang\.|java\.|core\$)|com\.esotericsoftware\.kryo\.).*" (.getName ^Class %)))))
 
+(def primitive? #{"void" "int" "byte" "short" "long" "char" "boolean" "float" "double"})
+
+(defn- ensure-class [x]
+  (cond
+    (string? x)
+    (when-some [classname (if-some [[_ t] (re-matches #"\[+(?:[ZBCDFIJS]|L(.*);)" x)]
+                               t
+                               (when-not (primitive? x)
+                                 (.replace ^String x \/ \.)))]
+         (when-some [class (try (Class/forName classname false *classloader*)
+                             (catch ClassNotFoundException _))]
+           class))
+    (class? x) x))
+
+(defn dep-logger [log!]
+  (fn [type x]
+    (case type
+      :var (log! x)
+      :class (log! (ensure-class x))
+      :root-class (run! log! (ou/descendants (ensure-class x)))
+      :var-ref (log! (resolve x)))))
+
 (defn bom
   "Computes the bill-of-materials for an object."
   ([root]
     (bom root default-whitelist))
   ([root whitelist?]
     (let [deps (atom [])]
-      (binding [*log-dep* #(when-not (whitelist? %) (swap! deps conj %))]
+      (binding [log-dep (dep-logger #(when-not (or (nil? %) (whitelist? %)) (swap! deps conj %)))]
         (let [root-bytes (kryo/freeze root)]
           (loop [todo #{} vars {} classes #{}]
             (let [todo (into todo (comp (remove vars) (remove classes)) @deps)]
@@ -195,8 +212,8 @@
                    (keep #(re-matches #"(kryo|clojure|carbonite)-(\d+\.\d+\.\d+(?:-.*)?)\.jar" %))
                    (map (fn [[_ p v]]
                           (cond-> [(symbol ({"clojure" "org.clojure"
-                                            "kryo" "com.esotericsoftware"
-                                            "carbonite" "com.twitter"} p) p) v]
+                                             "kryo" "com.esotericsoftware"
+                                             "carbonite" "com.twitter"} p) p) v]
                             (= p "carbonite") (into '[:exclusions [com.esotericsoftware.kryo/kryo]])))))
                  system-jars)]
     (into {}
@@ -208,6 +225,16 @@
   (into {}
     (for [class classes]
       [(resource-name class) (bytecode class)])))
+
+(defn- tmp-dir [prefix]
+  (let [root (java.io.File. (System/getProperty "java.io.tmpdir"))
+        base (str prefix "-" (System/currentTimeMillis) "-")]
+    (loop [i 0]
+      (let [dir (java.io.File. root (str base i))]
+        (cond
+          (.mkdir dir) dir
+          (< i 100) (recur (inc i))
+          :else (throw (IllegalStateException. (str "Can't create tmp dir prefixed by " (pr-str base) " after " i " collisions."))))))))
 
 (def ^:private support-entries
   (-> support-deps
@@ -339,6 +366,7 @@
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
            (donew com.amazonaws.services.lambda.model.InvokeRequest
                   {:function-name (make-function-name f)})))
+
 
 
 #_(deployment-package prn)
