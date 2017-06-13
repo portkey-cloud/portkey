@@ -361,7 +361,9 @@
                                           (filter #(= "portkey" (.getRoleName %)))
                                           first
                                           (.getArn))
-                               :runtime "java8"}))
+                               :runtime "java8"
+                               :memory-size (int 1536)
+                               :timeout (int 30)}))
       (.updateFunctionCode (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                            (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
                                   {:function-name function-name
