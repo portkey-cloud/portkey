@@ -33,6 +33,14 @@ public class UCInterpreter extends Interpreter {
         logdep = var("portkey.logdep/log-dep");
     }
     
+    static void logdep(Type t) {
+        logdep.invoke(CLASS_KW, t.getClassName());
+    }
+    
+    static void logdep(String s) {
+        logdep.invoke(CLASS_KW, s);
+    }
+    
     public UCInterpreter() {
         super(ASM5);
     }
@@ -121,6 +129,7 @@ public class UCInterpreter extends Interpreter {
         case JSR:
             return UCValue.RETURNADDRESS_VALUE;
         case GETSTATIC:
+            logdep(((FieldInsnNode) insn).owner);
             return newValue(Type.getType(((FieldInsnNode) insn).desc));
         case NEW:
             return newValue(Type.getObjectType(((TypeInsnNode) insn).desc));
@@ -177,9 +186,12 @@ public class UCInterpreter extends Interpreter {
         case FRETURN:
         case DRETURN:
         case ARETURN:
+            return null;
         case PUTSTATIC:
+            logdep(((FieldInsnNode) insn).owner);
             return null;
         case GETFIELD:
+            logdep(((FieldInsnNode) insn).owner);
             return newValue(Type.getType(((FieldInsnNode) insn).desc));
         case NEWARRAY:
             switch (((IntInsnNode) insn).operand) {
@@ -301,7 +313,9 @@ public class UCInterpreter extends Interpreter {
         case IF_ICMPLE:
         case IF_ACMPEQ:
         case IF_ACMPNE:
+            return null;
         case PUTFIELD:
+            logdep(((FieldInsnNode) insn).owner);
             return null;
         default:
             throw new Error("Internal error.");
@@ -320,16 +334,26 @@ public class UCInterpreter extends Interpreter {
             final List values) throws AnalyzerException {
         int opcode = insn.getOpcode();
         if (opcode == MULTIANEWARRAY) {
-            return newValue(Type.getType(((MultiANewArrayInsnNode) insn).desc));
-        } else if (opcode == INVOKEDYNAMIC) {
-            return newValue(Type
-                    .getReturnType(((InvokeDynamicInsnNode) insn).desc));
-        } else if (opcode == INVOKESPECIAL) {
-            MethodInsnNode minsn = (MethodInsnNode) insn;
-            logdep.invoke(CLASS_KW, minsn.owner);
-            return newValue(Type.getReturnType(minsn.desc));
+            Type atype = Type.getType(((MultiANewArrayInsnNode) insn).desc);
+            logdep(atype.getElementType());
+            return newValue(atype);
+        }
+        if (opcode == INVOKEDYNAMIC) {
+            InvokeDynamicInsnNode indy = (InvokeDynamicInsnNode) insn;
+            logdep(Type.getReturnType(indy.desc));
+            logdep(indy.bsm.getOwner());
+            return newValue(Type.getReturnType(indy.desc));
+        }
+        MethodInsnNode minsn = (MethodInsnNode) insn;
+        logdep(minsn.owner);
+        for(Type arg: Type.getArgumentTypes(minsn.desc)) {
+            logdep(arg);                
+        }
+        Type ret = Type.getReturnType(minsn.desc);
+        logdep(ret);
+        if (opcode == INVOKESPECIAL) {
+            return newValue(ret);
         } else {
-            MethodInsnNode minsn = (MethodInsnNode) insn;
             return (Value) invoke.invoke(opcode == INVOKESTATIC, minsn.owner, minsn.name, minsn.desc, values);
         }
     }
@@ -342,9 +366,10 @@ public class UCInterpreter extends Interpreter {
 
     @Override
     public Value merge(final Value v, final Value w) {
-        if (!v.equals(w)) {
-            return UCValue.UNINITIALIZED_VALUE;
-        }
-        return v;
+        // is this enough?
+        if (v.equals(w)) return v;
+        if (((UCValue) v).type == null) return w;
+        if (((UCValue) w).type == null) return v;
+        return UCValue.UNINITIALIZED_VALUE;
     }
 }

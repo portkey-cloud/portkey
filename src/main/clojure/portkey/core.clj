@@ -52,6 +52,7 @@
          (log-classname (.getClassName (.getReturnType mtype)))
          (doseq [^org.objectweb.asm.Type type (.getArgumentTypes mtype)]
            (log-classname (.getClassName type)))
+         (run! log-classname (.exceptions method))
          (.analyze analyzer (.name class-node) method)))))
 
 #_(defn inspect-class [^Class class]
@@ -128,12 +129,12 @@
   (cond
     (string? x)
     (when-some [classname (if-some [[_ t] (re-matches #"\[+(?:[ZBCDFIJS]|L(.*);)" x)]
-                               t
-                               (when-not (primitive? x)
-                                 (.replace ^String x \/ \.)))]
-         (when-some [class (try (Class/forName classname false *classloader*)
-                             (catch ClassNotFoundException _))]
-           class))
+                             t
+                             (when-not (primitive? x)
+                               (.replace ^String x \/ \.)))]
+       (when-some [class (try (Class/forName classname false *classloader*)
+                           (catch ClassNotFoundException _))]
+         class))
     (class? x) x))
 
 (defn dep-logger [log!]

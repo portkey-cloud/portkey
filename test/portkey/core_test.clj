@@ -73,7 +73,7 @@
             bos (java.io.ByteArrayOutputStream.)
             lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
         (when (instance? portkey.LambdaStub lambda) ; checking isolation
-          (throw (ex-info "Containment has been breached.")))
+          (throw (ex-info "Containment has been breached." {})))
         (with-context-cl cl
           (.handleRequest lambda (java.io.ByteArrayInputStream. (.getBytes in-as-string "utf-8")) bos nil))
         (String. (.toByteArray bos) "utf-8")))))
