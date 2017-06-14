@@ -33,13 +33,13 @@ its direct or indirect deps change!
 
 First steps:
 
- 1. Borrow Ouroboros from Powderkeg (only class access matters, var tracking is irrelevant in a first time).
- 2. Starting from a fn, serialize it using Kryo and a custom SerializerFactory to log all classes traversed during serialization. We also need to log all serialized vars.
- 3. Serialize these vars values and keep going until there's no new var.
- 4. Consider all classes encountered during steps 2 and 3.
- 5. Visit their bytecode to find all references to other classes or vars.
- 6. go to 3 until no new classes
- 7. package them all
+ 1. ~Borrow Ouroboros from Powderkeg (only class access matters, var tracking is irrelevant in a first time).~
+ 2. ~Starting from a fn, serialize it using Kryo and a custom SerializerFactory to log all classes traversed during serialization. We also need to log all serialized vars.~
+ 3. ~Serialize these vars values and keep going until there's no new var.~
+ 4. ~Consider all classes encountered during steps 2 and 3.~
+ 5. ~Visit their bytecode to find all references to other classes or vars.~
+ 6. go to 3 until no new classes (somehow done but need to be smarter about common dynamicisms, provide good defaults)
+ 7. ~package them all~
  8. send to the cloud! 
  
 Next steps:
