@@ -101,3 +101,14 @@
             (with-deps [[org.apache.hadoop/hadoop-core "1.2.1"]]
               (invoke (fn [in out ctx]
                         (spit out (org.apache.hadoop.fs.Path. dir file))))))))))
+
+(deftest parquet-avro
+  (testing "parquet-avro"
+    (is (= ""
+           (with-deps [[org.apache.parquet/parquet-avro "1.9.0"]
+                       [org.apache.hadoop/hadoop-core "1.2.1"]]
+             (invoke (fn [in out ctx]
+                       (with-open [rdr (-> (org.apache.hadoop.fs.Path. "/dev/null")
+                                           (org.apache.parquet.avro.AvroParquetReader/builder)
+                                           (.build))]
+                         (spit out (.read rdr))))))))))
