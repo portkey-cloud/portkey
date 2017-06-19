@@ -368,8 +368,8 @@ public class UCInterpreter extends Interpreter {
     public Value merge(final Value v, final Value w) {
         // is this enough?
         if (v.equals(w)) return v;
-        if (((UCValue) v).type == null) return w;
-        if (((UCValue) w).type == null) return v;
+        if (((UCValue) v).type == null && w.getSize() == 1) return w;
+        if (((UCValue) w).type == null && v.getSize() == 1) return v;
         return UCValue.UNINITIALIZED_VALUE;
     }
 }

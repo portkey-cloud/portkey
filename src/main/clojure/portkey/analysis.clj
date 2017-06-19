@@ -30,6 +30,16 @@
     (if (:unknown? class)
       UNKNOWN_OBJECT
       OBJECT))
+  [false "java/lang/Class" "getConstructor" "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;"]
+  (fn [class _]
+    (if (:unknown? class)
+      UNKNOWN_OBJECT
+      OBJECT))
+  [false "java/lang/reflect/Constructor" "newInstance" "([Ljava/lang/Object;)Ljava/lang/Object;"]
+  (fn [ctor _]
+    (if (:unknown? ctor)
+      UNKNOWN_OBJECT
+      OBJECT))
   [true "clojure/lang/RT" "classForName" "(Ljava/lang/String;)Ljava/lang/Class;"]
   asbtract-load-class
   [true "clojure/lang/RT" "var" "(Ljava/lang/String;Ljava/lang/String;)Lclojure/lang/Var;"]
