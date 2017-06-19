@@ -60,6 +60,8 @@
        (binding [*ns* (find-ns '~(ns-name *ns*))]
          ((eval '(fn ~args ~@body)) ~@args)))))
 
+(def ^:dynamic *extras* #{})
+
 (defn invoke
   "Invokes f packaged as a lambda and isolated in a distinct class loader.
    Input and output are strings."
@@ -68,7 +70,7 @@
   ([f in-as-string]
     (let [zip (java.io.File/createTempFile "portkey-core-test" "zip")]
       (.deleteOnExit zip)
-      (pk/package! zip f)
+      (apply pk/package! zip f *extras*)
       (let [^ClassLoader cl (create-classloader (unzip zip))
             bos (java.io.ByteArrayOutputStream.)
             lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
@@ -107,8 +109,13 @@
     (is (= ""
            (with-deps [[org.apache.parquet/parquet-avro "1.9.0"]
                        [org.apache.hadoop/hadoop-core "1.2.1"]]
-             (invoke (fn [in out ctx]
-                       (with-open [rdr (-> (org.apache.hadoop.fs.Path. "/dev/null")
+             (binding [*extras* #{org.apache.hadoop.security.ShellBasedUnixGroupsMapping
+                                  org.apache.hadoop.security.UserGroupInformation$HadoopLoginModule
+                                  org.apache.hadoop.fs.LocalFileSystem}]
+               (invoke (fn [in out ctx]
+                         (with-open [rdr (-> (org.apache.hadoop.fs.Path. "/dev/null")
                                            (org.apache.parquet.avro.AvroParquetReader/builder)
+                                           (.withConf (doto (org.apache.hadoop.conf.Configuration.)
+                                                        (.set "fs.file.impl" (.getName org.apache.hadoop.fs.LocalFileSystem))))
                                            (.build))]
-                         (spit out (.read rdr))))))))))
+                           (spit out (.read rdr)))))))))))

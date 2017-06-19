@@ -46,7 +46,21 @@
   (fn [ns name]
     (if (and (:constant? ns) (:constant? name))
       (do (log-dep :var-ref (symbol (:value ns) (:value name))) VAR) ; could even be made constant
-      (throw (ex-info "Can't statically resolve var lookup" {:ns ns :name name}))))})
+      (throw (ex-info "Can't statically resolve var lookup" {:ns ns :name name}))))
+  ;; the amount of adhoc interpretations should be minimized
+  [true "org/apache/hadoop/util/ReflectionUtils" "newInstance"
+   "(Ljava/lang/Class;Lorg/apache/hadoop/conf/Configuration;)Ljava/lang/Object;"]
+  (fn [class conf]
+    (if (:unknown? class)
+      UNKNOWN_OBJECT
+      OBJECT))
+  [false "org/apache/hadoop/conf/Configuration" "getClass"
+   "(Ljava/lang/String;Ljava/lang/Class;Ljava/lang/Class;)Ljava/lang/Class;"]
+  (fn [conf classname parent iface]
+    (do
+      (log-dep :class (:value classname))
+      CLASS)
+    UNKNOWN_CLASS)})
 
 (defn invoke [is-static owner name desc args]
   #_(prn is-static owner name desc)
