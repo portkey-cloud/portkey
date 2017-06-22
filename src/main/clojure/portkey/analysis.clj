@@ -47,6 +47,10 @@
     (if (and (:constant? ns) (:constant? name))
       (do (log-dep :var-ref (symbol (:value ns) (:value name))) VAR) ; could even be made constant
       (throw (ex-info "Can't statically resolve var lookup" {:ns ns :name name}))))
+  [true "clojure/lang/Util" "loadWithClass" "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;"]
+  (fn [script-base _]
+    (log-dep :class (str script-base clojure.lang.RT/LOADER_SUFFIX))
+    OBJECT)
   ;; the amount of adhoc interpretations should be minimized
   [true "org/apache/hadoop/util/ReflectionUtils" "newInstance"
    "(Ljava/lang/Class;Lorg/apache/hadoop/conf/Configuration;)Ljava/lang/Object;"]
