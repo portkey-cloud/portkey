@@ -317,17 +317,20 @@
 (defn make-function-name [f]
   (-> f class .getCanonicalName (str/replace "$" "/") aws-name-munge))
 
+(defn fetch-portkey-role []
+  (some->> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
+           (.listRoles)
+           (.getRoles)
+           (filter #(= "portkey" (.getRoleName %)))
+           first))
+
 (defn deploy! [f]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f))
                .toByteArray
                java.nio.ByteBuffer/wrap)
         function-name (make-function-name f)]
-    (when (->> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
-               (.listRoles)
-               (.getRoles)
-               (filter #(= "portkey" (.getRoleName %)))
-               empty?)
+    (when-not (fetch-portkey-role)
       (let [role (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
                      (.createRole (donew com.amazonaws.services.identitymanagement.model.CreateRoleRequest
                                          {:role-name "portkey"
@@ -351,20 +354,29 @@
              (.getFunctions)
              (filter #(= function-name (.getFunctionName %)))
              empty?)
-      (.createFunction (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-                       (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
-                              {:function-name function-name
-                               :handler "portkey.LambdaStub"
-                               :code {:zip-file bb}
-                               :role (->> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
-                                          (.listRoles)
-                                          (.getRoles)
-                                          (filter #(= "portkey" (.getRoleName %)))
-                                          first
-                                          (.getArn))
-                               :runtime "java8"
-                               :memory-size (int 1536)
-                               :timeout (int 30)}))
+      (let [arn (-> (fetch-portkey-role) (.getArn))
+            {:keys [success exception]} (reduce (fn [acc sleep-time]
+                                                  (try
+                                                    (.createFunction (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+                                                                     (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
+                                                                            {:function-name function-name
+                                                                             :handler "portkey.LambdaStub"
+                                                                             :code {:zip-file bb}
+                                                                             :role arn
+                                                                             :runtime "java8"
+                                                                             :memory-size (int 1536)
+                                                                             :timeout (int 30)}))
+                                                    (reduced {:success true})
+                                                    (catch com.amazonaws.services.lambda.model.InvalidParameterValueException e
+                                                      (if (.startsWith (.getMessage e) "The role defined for the function cannot be assumed by Lambda")
+                                                        (do
+                                                          (Thread/sleep sleep-time)
+                                                          {:success false :exception e})
+                                                        (throw e)))))
+                                                {:success true}
+                                                (repeat 20 1000))]
+        (when-not success
+          (throw exception)))
       (.updateFunctionCode (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                            (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
                                   {:function-name function-name
