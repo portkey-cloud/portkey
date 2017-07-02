@@ -324,6 +324,51 @@
            (filter #(= "portkey" (.getRoleName %)))
            first))
 
+(defn ensure-api [f]
+  (let [api-function-name (-> f class .getCanonicalName (str/split #"\$") last)
+        function-configuration (->> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+                                    (.listFunctions)
+                                    (.getFunctions)
+                                    (filter #(= (make-function-name f) (.getFunctionName %)))
+                                    first)]
+    (if-let [id (some-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
+                        (.getRestApis (com.amazonaws.services.apigateway.model.GetRestApisRequest.))
+                        (.getItems)
+                        (->> (filter #(= "portkey" (.getName %))))
+                        first
+                        (.getId))]
+      (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
+          (.putRestApi (donew com.amazonaws.services.apigateway.model.PutRestApiRequest
+                              {:rest-api-id id
+                               :body (-> (portkey.aws/swagger-doc api-function-name function-configuration)
+                                         cheshire.core/generate-string
+                                         (.getBytes "UTF-8")
+                                         java.nio.ByteBuffer/wrap)
+                               :fail-on-warnings true})))
+      (let [import-result (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
+                              (.importRestApi (donew com.amazonaws.services.apigateway.model.ImportRestApiRequest
+                                                     {:body (-> (portkey.aws/swagger-doc api-function-name function-configuration)
+                                                                cheshire.core/generate-string
+                                                                (.getBytes "UTF-8")
+                                                                java.nio.ByteBuffer/wrap)
+                                                      :fail-on-warnings true})))
+            {:keys [region account]} (-> function-configuration
+                                         .getFunctionArn
+                                         portkey.aws/parse-arn)]
+        (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+        (.addPermission (donew com.amazonaws.services.lambda.model.AddPermissionRequest
+                               {:function-name (make-function-name f)
+                                :statement-id (str (make-function-name f) "Execution")
+                                :action "lambda:InvokeFunction"
+                                :principal "apigateway.amazonaws.com"
+                                :source-arn (str "arn:aws:execute-api:"
+                                                 region
+                                                 ":"
+                                                 account
+                                                 ":"
+                                                 (.getId import-result)
+                                                 "/*/*/*")})))))))
+
 (defn deploy! [f]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f))
@@ -380,7 +425,8 @@
       (.updateFunctionCode (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                            (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
                                   {:function-name function-name
-                                   :zip-file bb})))))
+                                   :zip-file bb})))
+    (ensure-api f)))
 
 (defn invoke [f]
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
