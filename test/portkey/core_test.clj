@@ -122,8 +122,8 @@
 
 (deftest cheshire
   (testing "cheshire parse and generate"
-    (is (= "{\"a\": 1}")
-        (with-deps [[cheshire "5.7.1"]]
-          (invoke (fn [in out ctx]
-                    (spit out (cheshire.core/generate-string (cheshire.core/parse-string (slurp in)))))
-                  "{\"a\": 1}")))))
+    (is (= "{\"a\":1}"
+           (with-deps [[cheshire "5.7.1"]]
+             (invoke (fn [in out ctx]
+                       (spit out (cheshire.core/generate-string (cheshire.core/parse-string (slurp in)))))
+                     "{\"a\": 1}"))))))
