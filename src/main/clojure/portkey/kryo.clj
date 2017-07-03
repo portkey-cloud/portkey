@@ -57,7 +57,10 @@
         (reify com.esotericsoftware.kryo.factories.SerializerFactory
           (makeSerializer [_ k class]
             (log-dep :class class)
-            (.makeSerializer default-factory k class)))]
+            (let [ser (.makeSerializer default-factory k class)]
+              (when (instance? com.esotericsoftware.kryo.serializers.FieldSerializer ser)
+                (.setSerializeTransient ^com.esotericsoftware.kryo.serializers.FieldSerializer ser true))
+              ser)))]
     (doto (com.esotericsoftware.kryo.Kryo.)
       carb/default-registry
       (.setInstantiatorStrategy (org.objenesis.strategy.StdInstantiatorStrategy.)) ; for closures
