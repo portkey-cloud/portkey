@@ -6,7 +6,8 @@
     [clojure.java.io :as io]
     [clojure.string :as str]
     [cheshire.core :as json]
-    [portkey.logdep :refer [log-dep]]))
+    [portkey.logdep :refer [log-dep]]
+    [portkey.aws :as aws]))
 
 (def ^:dynamic ^ClassLoader *classloader* nil)
 
@@ -340,21 +341,21 @@
       (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
           (.putRestApi (donew com.amazonaws.services.apigateway.model.PutRestApiRequest
                               {:rest-api-id id
-                               :body (-> (portkey.aws/swagger-doc api-function-name function-configuration)
+                               :body (-> (aws/swagger-doc api-function-name function-configuration)
                                          cheshire.core/generate-string
                                          (.getBytes "UTF-8")
                                          java.nio.ByteBuffer/wrap)
                                :fail-on-warnings true})))
       (let [import-result (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
                               (.importRestApi (donew com.amazonaws.services.apigateway.model.ImportRestApiRequest
-                                                     {:body (-> (portkey.aws/swagger-doc api-function-name function-configuration)
+                                                     {:body (-> (aws/swagger-doc api-function-name function-configuration)
                                                                 cheshire.core/generate-string
                                                                 (.getBytes "UTF-8")
                                                                 java.nio.ByteBuffer/wrap)
                                                       :fail-on-warnings true})))
             {:keys [region account]} (-> function-configuration
                                          .getFunctionArn
-                                         portkey.aws/parse-arn)]
+                                         aws/parse-arn)]
         (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
         (.addPermission (donew com.amazonaws.services.lambda.model.AddPermissionRequest
                                {:function-name (make-function-name f)
