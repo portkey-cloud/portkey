@@ -325,6 +325,13 @@
            (filter #(= "portkey" (.getRoleName %)))
            first))
 
+(defn fetch-api [api-name]
+  (some-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
+          (.getRestApis (com.amazonaws.services.apigateway.model.GetRestApisRequest.))
+          (.getItems)
+          (->> (filter #(= api-name (.getName %))))
+          first))
+
 (defn ensure-api [f]
   (let [api-function-name (-> f class .getCanonicalName (str/split #"\$") last)
         function-configuration (->> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
@@ -332,12 +339,7 @@
                                     (.getFunctions)
                                     (filter #(= (make-function-name f) (.getFunctionName %)))
                                     first)]
-    (if-let [id (some-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
-                        (.getRestApis (com.amazonaws.services.apigateway.model.GetRestApisRequest.))
-                        (.getItems)
-                        (->> (filter #(= "portkey" (.getName %))))
-                        first
-                        (.getId))]
+    (if-let [id (-> (fetch-api "portkey") (.getId))]
       (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
           (.putRestApi (donew com.amazonaws.services.apigateway.model.PutRestApiRequest
                               {:rest-api-id id
@@ -369,6 +371,12 @@
                                                  ":"
                                                  (.getId import-result)
                                                  "/*/*/*")})))))))
+
+(defn deploy-api [api stage]
+  (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
+      (.createDeployment (donew com.amazonaws.services.apigateway.model.CreateDeploymentRequest
+                                {:stage-name stage
+                                 :rest-api-id (-> (fetch-api api) (.getId))}))))
 
 (defn deploy! [f]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
@@ -427,7 +435,8 @@
                            (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
                                   {:function-name function-name
                                    :zip-file bb})))
-    (ensure-api f)))
+    (ensure-api f)
+    (deploy-api "portkey" "prod")))
 
 (defn invoke [f]
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
