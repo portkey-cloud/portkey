@@ -315,9 +315,6 @@
            (.addShutdownHook (Thread. #(.shutdown client))))
        client))))
 
-(defn make-function-name [f]
-  (-> f class .getCanonicalName (str/replace "$" "/") aws-name-munge))
-
 (defn fetch-portkey-role []
   (some->> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
            (.listRoles)
@@ -332,35 +329,39 @@
           (->> (filter #(= api-name (.getName %))))
           first))
 
-(defn ensure-api [f]
-  (let [api-function-name (-> f class .getCanonicalName (str/split #"\$") last)
-        function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+(defn ensure-api [lambda-function-name api-function-name args]
+  (let [function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                                    (.getFunctionConfiguration (donew com.amazonaws.services.lambda.model.GetFunctionConfigurationRequest
-                                                                     {:function-name (make-function-name f)})))]
+                                                                     {:function-name lambda-function-name})))]
     (if-let [id (some-> (fetch-api "portkey") (.getId))]
       (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
           (.putRestApi (donew com.amazonaws.services.apigateway.model.PutRestApiRequest
                               {:rest-api-id id
-                               :body (-> (aws/swagger-doc api-function-name function-configuration)
+                               :body (-> (aws/swagger-doc api-function-name
+                                                          (.getFunctionArn function-configuration)
+                                                          args)
                                          cheshire.core/generate-string
                                          (.getBytes "UTF-8")
                                          java.nio.ByteBuffer/wrap)
                                :fail-on-warnings true}))
           (.getId))
-      (let [import-result (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
-                              (.importRestApi (donew com.amazonaws.services.apigateway.model.ImportRestApiRequest
-                                                     {:body (-> (aws/swagger-doc api-function-name function-configuration)
-                                                                cheshire.core/generate-string
-                                                                (.getBytes "UTF-8")
-                                                                java.nio.ByteBuffer/wrap)
-                                                      :fail-on-warnings true})))
+      (let [id (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
+                   (.importRestApi (donew com.amazonaws.services.apigateway.model.ImportRestApiRequest
+                                          {:body (-> (aws/swagger-doc api-function-name
+                                                                      (.getFunctionArn function-configuration)
+                                                                      args)
+                                                     cheshire.core/generate-string
+                                                     (.getBytes "UTF-8")
+                                                     java.nio.ByteBuffer/wrap)
+                                           :fail-on-warnings true}))
+                   (.getId))
             {:keys [region account]} (-> function-configuration
                                          .getFunctionArn
                                          aws/parse-arn)]
         (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
             (.addPermission (donew com.amazonaws.services.lambda.model.AddPermissionRequest
-                                   {:function-name (make-function-name f)
-                                    :statement-id (str (make-function-name f) "Execution")
+                                   {:function-name lambda-function-name
+                                    :statement-id (str lambda-function-name "Execution")
                                     :action "lambda:InvokeFunction"
                                     :principal "apigateway.amazonaws.com"
                                     :source-arn (str "arn:aws:execute-api:"
@@ -368,9 +369,9 @@
                                                      ":"
                                                      account
                                                      ":"
-                                                     (.getId import-result)
+                                                     id
                                                      "/*/*/*")})))
-        (.getId import-result)))))
+        id))))
 
 (defn deploy-api [id stage]
   (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
@@ -378,12 +379,11 @@
                                 {:stage-name stage
                                  :rest-api-id id}))))
 
-(defn deploy! [f]
+(defn deploy! [f lambda-function-name api-function-name args]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f))
                .toByteArray
-               java.nio.ByteBuffer/wrap)
-        function-name (make-function-name f)]
+               java.nio.ByteBuffer/wrap)]
     (when-not (fetch-portkey-role)
       (let [role (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
                      (.createRole (donew com.amazonaws.services.identitymanagement.model.CreateRoleRequest
@@ -406,14 +406,14 @@
     (if (->> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
              (.listFunctions)
              (.getFunctions)
-             (filter #(= function-name (.getFunctionName %)))
+             (filter #(= lambda-function-name (.getFunctionName %)))
              empty?)
       (let [arn (-> (fetch-portkey-role) (.getArn))
             {:keys [success exception]} (reduce (fn [acc sleep-time]
                                                   (try
                                                     (.createFunction (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                                                                      (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
-                                                                            {:function-name function-name
+                                                                            {:function-name lambda-function-name
                                                                              :handler "portkey.LambdaStub"
                                                                              :code {:zip-file bb}
                                                                              :role arn
@@ -433,15 +433,30 @@
           (throw exception)))
       (.updateFunctionCode (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                            (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
-                                  {:function-name function-name
+                                  {:function-name lambda-function-name
                                    :zip-file bb})))
-    (-> (ensure-api f)
+    (-> (ensure-api lambda-function-name
+                    api-function-name
+                    args)
         (deploy-api "prod"))))
 
-(defn invoke [f]
+(defn mount! [var-f]
+  (let [arg-names (-> var-f meta :arglists first)
+        f @var-f
+        wrap (fn [in out ctx]
+               (let [method-request (-> in slurp json/parse-string)
+                     args (for [arg-name arg-names]
+                            (get-in method-request ["params" "querystring" (name arg-name)]))]
+                 (spit out (apply f args))))]
+    (deploy! wrap
+             (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
+             (-> var-f meta :name name)
+             arg-names)))
+
+(defn invoke [var-f]
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
            (donew com.amazonaws.services.lambda.model.InvokeRequest
-                  {:function-name (make-function-name f)})))
+                  {:function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))})))
 
 
 
