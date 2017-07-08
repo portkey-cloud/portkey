@@ -334,12 +334,10 @@
 
 (defn ensure-api [f]
   (let [api-function-name (-> f class .getCanonicalName (str/split #"\$") last)
-        function-configuration (->> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-                                    (.listFunctions)
-                                    (.getFunctions)
-                                    (filter #(= (make-function-name f) (.getFunctionName %)))
-                                    first)]
-    (if-let [id (-> (fetch-api "portkey") (.getId))]
+        function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+                                   (.getFunctionConfiguration (donew com.amazonaws.services.lambda.model.GetFunctionConfigurationRequest
+                                                                     {:function-name (make-function-name f)})))]
+    (if-let [id (some-> (fetch-api "portkey") (.getId))]
       (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
           (.putRestApi (donew com.amazonaws.services.apigateway.model.PutRestApiRequest
                               {:rest-api-id id
@@ -347,7 +345,8 @@
                                          cheshire.core/generate-string
                                          (.getBytes "UTF-8")
                                          java.nio.ByteBuffer/wrap)
-                               :fail-on-warnings true})))
+                               :fail-on-warnings true}))
+          (.getId))
       (let [import-result (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
                               (.importRestApi (donew com.amazonaws.services.apigateway.model.ImportRestApiRequest
                                                      {:body (-> (aws/swagger-doc api-function-name function-configuration)
@@ -359,24 +358,25 @@
                                          .getFunctionArn
                                          aws/parse-arn)]
         (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-        (.addPermission (donew com.amazonaws.services.lambda.model.AddPermissionRequest
-                               {:function-name (make-function-name f)
-                                :statement-id (str (make-function-name f) "Execution")
-                                :action "lambda:InvokeFunction"
-                                :principal "apigateway.amazonaws.com"
-                                :source-arn (str "arn:aws:execute-api:"
-                                                 region
-                                                 ":"
-                                                 account
-                                                 ":"
-                                                 (.getId import-result)
-                                                 "/*/*/*")})))))))
+            (.addPermission (donew com.amazonaws.services.lambda.model.AddPermissionRequest
+                                   {:function-name (make-function-name f)
+                                    :statement-id (str (make-function-name f) "Execution")
+                                    :action "lambda:InvokeFunction"
+                                    :principal "apigateway.amazonaws.com"
+                                    :source-arn (str "arn:aws:execute-api:"
+                                                     region
+                                                     ":"
+                                                     account
+                                                     ":"
+                                                     (.getId import-result)
+                                                     "/*/*/*")})))
+        (.getId import-result)))))
 
-(defn deploy-api [api stage]
+(defn deploy-api [id stage]
   (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
       (.createDeployment (donew com.amazonaws.services.apigateway.model.CreateDeploymentRequest
                                 {:stage-name stage
-                                 :rest-api-id (-> (fetch-api api) (.getId))}))))
+                                 :rest-api-id id}))))
 
 (defn deploy! [f]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
@@ -435,8 +435,8 @@
                            (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
                                   {:function-name function-name
                                    :zip-file bb})))
-    (ensure-api f)
-    (deploy-api "portkey" "prod")))
+    (-> (ensure-api f)
+        (deploy-api "prod"))))
 
 (defn invoke [f]
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
