@@ -329,22 +329,49 @@
           (->> (filter #(= api-name (.getName %))))
           first))
 
+(defn get-function-policy [lambda-function-name]
+  (try
+    (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+        (.getPolicy (donew com.amazonaws.services.lambda.model.GetPolicyRequest
+                           {:function-name lambda-function-name})))
+    (catch com.amazonaws.services.lambda.model.ResourceNotFoundException e
+      nil)))
+
 (defn ensure-api [lambda-function-name api-function-name args]
   (let [function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                                    (.getFunctionConfiguration (donew com.amazonaws.services.lambda.model.GetFunctionConfigurationRequest
-                                                                     {:function-name lambda-function-name})))]
+                                                                     {:function-name lambda-function-name})))
+        {:keys [region account]} (-> function-configuration
+                                     .getFunctionArn
+                                     aws/parse-arn)
+        function-policy (get-function-policy lambda-function-name)]
     (if-let [id (some-> (fetch-api "portkey") (.getId))]
-      (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
-          (.putRestApi (donew com.amazonaws.services.apigateway.model.PutRestApiRequest
-                              {:rest-api-id id
-                               :body (-> (aws/swagger-doc api-function-name
-                                                          (.getFunctionArn function-configuration)
-                                                          args)
-                                         cheshire.core/generate-string
-                                         (.getBytes "UTF-8")
-                                         java.nio.ByteBuffer/wrap)
-                               :fail-on-warnings true}))
-          (.getId))
+      (do
+        (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
+            (.putRestApi (donew com.amazonaws.services.apigateway.model.PutRestApiRequest
+                                {:rest-api-id id
+                                 :body (-> (aws/swagger-doc api-function-name
+                                                            (.getFunctionArn function-configuration)
+                                                            args)
+                                           cheshire.core/generate-string
+                                           (.getBytes "UTF-8")
+                                           java.nio.ByteBuffer/wrap)
+                                 :fail-on-warnings true})))
+        (when-not function-policy
+          (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+              (.addPermission (donew com.amazonaws.services.lambda.model.AddPermissionRequest
+                                     {:function-name lambda-function-name
+                                      :statement-id (str lambda-function-name "Execution")
+                                      :action "lambda:InvokeFunction"
+                                      :principal "apigateway.amazonaws.com"
+                                      :source-arn (str "arn:aws:execute-api:"
+                                                       region
+                                                       ":"
+                                                       account
+                                                       ":"
+                                                       id
+                                                       "/*/*/*")}))))
+        id)
       (let [id (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
                    (.importRestApi (donew com.amazonaws.services.apigateway.model.ImportRestApiRequest
                                           {:body (-> (aws/swagger-doc api-function-name
@@ -354,10 +381,7 @@
                                                      (.getBytes "UTF-8")
                                                      java.nio.ByteBuffer/wrap)
                                            :fail-on-warnings true}))
-                   (.getId))
-            {:keys [region account]} (-> function-configuration
-                                         .getFunctionArn
-                                         aws/parse-arn)]
+                   (.getId))]
         (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
             (.addPermission (donew com.amazonaws.services.lambda.model.AddPermissionRequest
                                    {:function-name lambda-function-name
