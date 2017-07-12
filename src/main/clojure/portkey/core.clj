@@ -462,7 +462,7 @@
     (-> (ensure-api lambda-function-name
                     api-function-name
                     args)
-        (deploy-api "prod"))))
+        (deploy-api "repl"))))
 
 (defn mount! [var-f]
   (let [arg-names (-> var-f meta :arglists first)
