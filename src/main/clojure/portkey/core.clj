@@ -315,12 +315,18 @@
            (.addShutdownHook (Thread. #(.shutdown client))))
        client))))
 
-(defn fetch-portkey-role []
-  (some->> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
-           (.listRoles)
-           (.getRoles)
-           (filter #(= "portkey" (.getRoleName %)))
-           first))
+(defmacro try-some [& body]
+  `(try
+     (do ~@body)
+     (catch Throwable t#
+       nil)))
+
+(def fetch-portkey-role
+  (memoize
+   (fn []
+     (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
+         (.getRole (donew com.amazonaws.services.identitymanagement.model.GetRoleRequest
+                          {:role-name "portkey"}))))))
 
 (defn fetch-api [api-name]
   (some-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
@@ -408,7 +414,7 @@
                (doto (package! f))
                .toByteArray
                java.nio.ByteBuffer/wrap)]
-    (when-not (fetch-portkey-role)
+    (when-not (try-some (fetch-portkey-role))
       (let [role (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
                      (.createRole (donew com.amazonaws.services.identitymanagement.model.CreateRoleRequest
                                          {:role-name "portkey"
@@ -432,7 +438,7 @@
              (.getFunctions)
              (filter #(= lambda-function-name (.getFunctionName %)))
              empty?)
-      (let [arn (-> (fetch-portkey-role) (.getArn))
+      (let [arn (-> (try-some (fetch-portkey-role)) (.getArn))
             {:keys [success exception]} (reduce (fn [acc sleep-time]
                                                   (try
                                                     (.createFunction (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
