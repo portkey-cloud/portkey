@@ -343,7 +343,7 @@
     (catch com.amazonaws.services.lambda.model.ResourceNotFoundException e
       nil)))
 
-(defn ensure-api [lambda-function-name api-function-name args]
+(defn ensure-api [lambda-function-name api-function-name parsed-path]
   (let [function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                                    (.getFunctionConfiguration (donew com.amazonaws.services.lambda.model.GetFunctionConfigurationRequest
                                                                      {:function-name lambda-function-name})))
@@ -358,7 +358,7 @@
                                 {:rest-api-id id
                                  :body (-> (aws/swagger-doc api-function-name
                                                             (.getFunctionArn function-configuration)
-                                                            args)
+                                                            parsed-path)
                                            cheshire.core/generate-string
                                            (.getBytes "UTF-8")
                                            java.nio.ByteBuffer/wrap)
@@ -382,7 +382,7 @@
                    (.importRestApi (donew com.amazonaws.services.apigateway.model.ImportRestApiRequest
                                           {:body (-> (aws/swagger-doc api-function-name
                                                                       (.getFunctionArn function-configuration)
-                                                                      args)
+                                                                      parsed-path)
                                                      cheshire.core/generate-string
                                                      (.getBytes "UTF-8")
                                                      java.nio.ByteBuffer/wrap)
@@ -409,7 +409,7 @@
                                 {:stage-name stage
                                  :rest-api-id id}))))
 
-(defn deploy! [f lambda-function-name api-function-name args]
+(defn deploy! [f lambda-function-name api-function-name parsed-path]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f))
                .toByteArray
@@ -439,49 +439,71 @@
              (filter #(= lambda-function-name (.getFunctionName %)))
              empty?)
       (let [arn (-> (try-some (fetch-portkey-role)) (.getArn))
-            {:keys [success exception]} (reduce (fn [acc sleep-time]
-                                                  (try
-                                                    (.createFunction (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-                                                                     (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
-                                                                            {:function-name lambda-function-name
-                                                                             :handler "portkey.LambdaStub"
-                                                                             :code {:zip-file bb}
-                                                                             :role arn
-                                                                             :runtime "java8"
-                                                                             :memory-size (int 1536)
-                                                                             :timeout (int 30)}))
-                                                    (reduced {:success true})
-                                                    (catch com.amazonaws.services.lambda.model.InvalidParameterValueException e
-                                                      (if (.startsWith (.getMessage e) "The role defined for the function cannot be assumed by Lambda")
-                                                        (do
-                                                          (Thread/sleep sleep-time)
-                                                          {:success false :exception e})
-                                                        (throw e)))))
-                                                {:success true}
-                                                (repeat 20 1000))]
-        (when-not success
+            client (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+            req (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
+                       {:function-name lambda-function-name
+                        :handler "portkey.LambdaStub"
+                        :code {:zip-file bb}
+                        :role arn
+                        :runtime "java8"
+                        :memory-size (int 1536)
+                        :timeout (int 30)})]
+        (when-some [exception
+                    (reduce (fn [acc sleep-time]
+                              (try
+                                (.createFunction client req)
+                                (reduced nil)
+                                (catch com.amazonaws.services.lambda.model.InvalidParameterValueException e
+                                  (if (.startsWith (.getMessage e) "The role defined for the function cannot be assumed by Lambda")
+                                    (do
+                                      (Thread/sleep sleep-time)
+                                      e)
+                                    (reduced e)))))
+                      nil (repeat 20 1000))]
           (throw exception)))
       (.updateFunctionCode (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-                           (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
-                                  {:function-name lambda-function-name
-                                   :zip-file bb})))
+        (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
+          {:function-name lambda-function-name
+           :zip-file bb})))
     (-> (ensure-api lambda-function-name
                     api-function-name
-                    args)
+                    parsed-path)
         (deploy-api "repl"))))
 
-(defn mount! [var-f]
+(defn parse-path [template argnames]
+  (let [[_ path query] (re-matches #"(.*?)(\?.*)?" template)
+        path-args (into #{} (map second) (re-seq #"\{([^}]*)}" path))
+        query-arg-params (into {}
+                           (when query (for [[_ param arg] (re-seq #"[&?](.*?)=\{(.*)}" query)] [arg param])))
+        arg-paths (into []
+                    (comp (map name)
+                      (map-indexed (fn [i ^String arg]
+                                     (if (path-args arg)
+                                       ["path" arg]
+                                       (if-some [param (query-arg-params arg)]
+                                         ["querystring" param]
+                                         (cond
+                                           (not (.startsWith arg "%")) (recur i (str "%" i))
+                                           (= "%0" arg) (recur i "%")
+                                           :else (throw (ex-info (str "Unmapped argument: " (nth argnames i)) {:template template :argnames argnames}))))))))
+                    argnames)]
+    {:path path
+     :path-args path-args
+     :query-args (vals query-arg-params)
+     :arg-paths arg-paths}))
+
+(defn mount [var-f path]
   (let [arg-names (-> var-f meta :arglists first)
         f @var-f
+        {:as parsed-path :keys [arg-paths]} (parse-path path arg-names)
         wrap (fn [in out ctx]
-               (let [method-request (-> in slurp json/parse-string)
-                     args (for [arg-name arg-names]
-                            (get-in method-request ["params" "querystring" (name arg-name)]))]
+               (let [{:as method-request :strs [params]} (-> in slurp json/parse-string)
+                     args (map #(get-in params %) arg-paths)]
                  (spit out (apply f args))))]
     (deploy! wrap
              (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
              (-> var-f meta :name name)
-             arg-names)))
+             parsed-path)))
 
 (defn invoke [var-f]
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)

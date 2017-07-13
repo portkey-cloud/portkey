@@ -10,23 +10,29 @@
     {:region region
      :account account}))
 
-(defn swagger-doc [api-function-name function-arn arglist]
+(defn swagger-doc [api-function-name function-arn {:keys [path path-args query-args]}]
   {"swagger" "2.0"
    "info" {"version" (.format formatter (ZonedDateTime/now))
            "title" "portkey"}
    "basePath" "/portkey"
    "schemes" ["https"]
    "paths"
-   {(str "/" api-function-name)
+   {path
     {"get"
      {"consumes" ["application/json"]
       "produces" ["application/json"]
       "parameters"
-      (for [arg arglist]
-        {"name" (name arg)
-         "in" "query"
-         "required" "true"
-         "type" "string"})
+      (concat
+        (for [arg query-args]
+          {"name" arg
+           "in" "query"
+           "required" "true"
+           "type" "string"})
+       (for [arg path-args]
+         {"name" arg
+          "in" "path"
+          "required" "true"
+          "type" "string"}))
       "responses"
       {"200"
        {"description" "200 response"
