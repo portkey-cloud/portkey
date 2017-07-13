@@ -416,7 +416,7 @@
                                 {:stage-name stage
                                  :rest-api-id id}))))
 
-(defn deploy! [f lambda-function-name api-function-name parsed-path]
+(defn deploy! [f lambda-function-name]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f))
                .toByteArray
@@ -451,27 +451,26 @@
                         :runtime "java8"
                         :memory-size (int 1536)
                         :timeout (int 30)})]
-        (when-some [exception
-                    (reduce (fn [acc sleep-time]
-                              (try
-                                (.createFunction client req)
-                                (reduced nil)
-                                (catch com.amazonaws.services.lambda.model.InvalidParameterValueException e
-                                  (if (.startsWith (.getMessage e) "The role defined for the function cannot be assumed by Lambda")
-                                    (do
-                                      (Thread/sleep sleep-time)
-                                      e)
-                                    (reduced e)))))
-                      nil (repeat 20 1000))]
-          (throw exception)))
-      (.updateFunctionCode (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-        (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
-          {:function-name lambda-function-name
-           :zip-file bb})))
-    (-> (ensure-api lambda-function-name
-                    api-function-name
-                    parsed-path)
-        (deploy-api "repl"))))
+        (let [{:keys [exception result]}
+              (reduce (fn [acc sleep-time]
+                        (try
+                          (reduced {:result (.createFunction client req)})
+                          (catch com.amazonaws.services.lambda.model.InvalidParameterValueException e
+                            (if (.startsWith (.getMessage e) "The role defined for the function cannot be assumed by Lambda")
+                              (do
+                                (Thread/sleep sleep-time)
+                                {:exception e})
+                              (reduced {:exception e})))))
+                      nil
+                      (repeat 20 1000))]
+          (if exception
+            (throw exception)
+            (.getFunctionArn result))))
+      (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+          (.updateFunctionCode (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
+                                      {:function-name lambda-function-name
+                                       :zip-file bb}))
+          (.getFunctionArn)))))
 
 (defn parse-path [template argnames]
   (let [[_ path query] (re-matches #"(.*?)(\?.*)?" template)
@@ -502,11 +501,17 @@
         wrap (fn [in out ctx]
                (let [{:as method-request :strs [params]} (-> in slurp json/parse-string)
                      args (map #(get-in params %) arg-paths)]
-                 (spit out (apply f args))))]
-    (deploy! wrap
-             (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
-             (-> var-f meta :name name)
-             parsed-path)))
+                 (spit out (apply f args))))
+        lambda-function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
+        api-function-name (-> var-f meta :name name)
+        arn (deploy! wrap lambda-function-name)
+        {:keys [region]} (aws/parse-arn arn)
+        id (ensure-api lambda-function-name
+                       api-function-name
+                       parsed-path)
+        stage "repl"]
+    (deploy-api id stage)
+    {:url (str "https://" id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
 
 (defn invoke [var-f]
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
