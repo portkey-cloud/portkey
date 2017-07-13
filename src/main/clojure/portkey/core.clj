@@ -283,7 +283,7 @@
                               1 `(~(symbol (str "." mname)) ~(as-doto* (first types) v))
                               (throw (IllegalStateException. (str "Too many overrides for method " mname " on class " class)))))
                           `(~(symbol (str "." mname)) ~v))))]
-    `(doto (new ~class)
+    `(doto (new ~(symbol (.getName class)))
        ~@(map setter-call m))))
 
 (defn- aws-name-munge [name]
