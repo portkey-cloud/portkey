@@ -441,7 +441,7 @@
                                                                                          :Action ["logs:CreateLogStream" "logs:PutLogEvents"]
                                                                                          :Resource ["arn:aws:logs:*:*:log-group:*:*"]}]})})))))
     (if-not (try-some (get-function lambda-function-name))
-      (let [arn (-> (try-some (fetch-portkey-role)) (.getArn))
+      (let [arn (-> (try-some (fetch-portkey-role)) (.getRole) (.getArn))
             client (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
             req (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
                        {:function-name lambda-function-name
