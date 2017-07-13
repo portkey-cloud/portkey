@@ -18,7 +18,7 @@ Live at the repl:
 (defn flatter [name]
   (str name " is " (rand-nth ["incredible" "awesome" "fantastic"])))
 
-(pk/mount flatter "/hello")
+(pk/mount flatter "/hello?name={name}")
 => {:url "https://api-id.execute-api.region.amazonaws.com/hello"}
 ```
 
@@ -38,9 +38,9 @@ First steps:
  3. ~Serialize these vars values and keep going until there's no new var.~
  4. ~Consider all classes encountered during steps 2 and 3.~
  5. ~Visit their bytecode to find all references to other classes or vars.~
- 6. go to 3 until no new classes (somehow done but need to be smarter about common dynamicisms, provide good defaults)
+ 6. ~go to 3 until no new classes (somehow done but need to be smarter about common dynamicisms, provide good defaults)~
  7. ~package them all~
- 8. send to the cloud! 
+ 8. ~send to the cloud!~
  
 Next steps:
 
@@ -53,7 +53,7 @@ Next steps:
  
 ## License
 
-Copyright © 2017 Christophe Grand
+Copyright © 2017 Christophe Grand and Kimmo Koskinen
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
