@@ -343,6 +343,13 @@
     (catch com.amazonaws.services.lambda.model.ResourceNotFoundException e
       nil)))
 
+(def get-function
+  (memoize
+   (fn [function-name]
+     (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+         (.getFunction (donew com.amazonaws.services.lambda.model.GetFunctionRequest
+                              {:function-name function-name}))))))
+
 (defn ensure-api [lambda-function-name api-function-name parsed-path]
   (let [function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                                    (.getFunctionConfiguration (donew com.amazonaws.services.lambda.model.GetFunctionConfigurationRequest
@@ -433,11 +440,7 @@
                                                                                         {:Effect "Allow"
                                                                                          :Action ["logs:CreateLogStream" "logs:PutLogEvents"]
                                                                                          :Resource ["arn:aws:logs:*:*:log-group:*:*"]}]})})))))
-    (if (->> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-             (.listFunctions)
-             (.getFunctions)
-             (filter #(= lambda-function-name (.getFunctionName %)))
-             empty?)
+    (if-not (try-some (get-function lambda-function-name))
       (let [arn (-> (try-some (fetch-portkey-role)) (.getArn))
             client (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
             req (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
