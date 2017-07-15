@@ -127,3 +127,18 @@
              (invoke (fn [in out ctx]
                        (spit out (cheshire.core/generate-string (cheshire.core/parse-string (slurp in)))))
                      "{\"a\": 1}"))))))
+
+(deftest timbre-slf4j
+  (testing "timbre works"
+    (is (not (empty?
+              (with-deps [[com.taoensso/timbre "4.10.0"] ]
+                (invoke (fn [in out ctx]
+                          (spit out (with-out-str (taoensso.timbre/info "hello"))))))))))
+  (testing "genclass doesn't bother us"
+    (is (not (empty?
+              (with-deps [[com.taoensso/timbre "4.10.0"]
+                          [org.slf4j/slf4j-api "1.7.14"]
+                          [com.fzakaria/slf4j-timbre "0.3.7"]]
+                (invoke (fn [in out ctx]
+                          (let [logger (org.slf4j.LoggerFactory/getLogger "test")]
+                            (spit out (with-out-str (.info logger "world"))))))))))))
