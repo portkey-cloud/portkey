@@ -476,7 +476,7 @@
   (let [[_ path query] (re-matches #"(.*?)(\?.*)?" template)
         path-args (into #{} (map second) (re-seq #"\{([^}]*)}" path))
         query-arg-params (into {}
-                           (when query (for [[_ param arg] (re-seq #"[&?](.*?)=\{(.*)}" query)] [arg param])))
+                           (when query (for [[_ param arg] (re-seq #"[&?](\w*)=\{(\w*)}" query)] [arg param])))
         arg-paths (into []
                     (comp (map name)
                       (map-indexed (fn [i ^String arg]

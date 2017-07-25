@@ -142,3 +142,10 @@
                 (invoke (fn [in out ctx]
                           (let [logger (org.slf4j.LoggerFactory/getLogger "test")]
                             (spit out (with-out-str (.info logger "world"))))))))))))
+
+(deftest parse-path
+  (is (= (pk/parse-path "/sum?x={x}&y={y}" ['x 'y])
+         {:path "/sum"
+          :path-args #{}
+          :query-args '("x" "y")
+          :arg-paths [["querystring" "x"] ["querystring" "y"]]})))
