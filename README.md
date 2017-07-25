@@ -50,7 +50,38 @@ Next steps:
  * support other backends than AWS Lambda
  * S3 buckets as Clojure references?
  * Track methods usage and narrow the deps graphs (bonus: remove unused methods from classes)
- 
+
+## Requirements
+
+The following AWS service actions are used by portkey, define them in for example an inline policy for a IAM user:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Resource": "*",
+      "Action": [
+        "lambda:GetPolicy",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:AddPermission",
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:InvokeFunction",
+        "apigateway:*",
+        "iam:GetRole",
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:PassRole"
+      ]
+    }
+  ]
+}
+
+```
+
 ## License
 
 Copyright © 2017 Christophe Grand and Kimmo Koskinen
