@@ -149,3 +149,18 @@
           :path-args #{}
           :query-args '("x" "y")
           :arg-paths [["querystring" "x"] ["querystring" "y"]]})))
+
+(deftest jdbc
+  (is (with-deps [[org.postgresql/postgresql "42.1.3.jre7"]
+                  [org.clojure/java.jdbc "0.7.0"]]
+        (invoke (fn [in out ctx]
+                  (require '[clojure.java.jdbc :as jdbc])
+                  (try
+                    (let [db-name (->> #(rand-nth (mapv char (range (int \A) (-> \Z int inc))))
+                                       repeatedly
+                                       (take 10)
+                                       (apply str))]
+                      (jdbc/query {:connection-uri (str "jdbc:postgresql://localhost/" db-name)})
+                      false)
+                    (catch org.postgresql.util.PSQLException t
+                      true)))))))
