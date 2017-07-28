@@ -118,11 +118,20 @@
     (identical? cl (.getClassLoader Class)) ; in case a JVM does not return null for boostrap
     true))
 
+(def clojure-java-ns
+  ["java\\.api"
+   "java\\.browse"
+   "java\\.io"
+   "java\\.javadoc"
+   "java\\.shell"])
+
 (def default-whitelist
   #(if (var? %)
      (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'carbonite.serializer})
      (or (bootstrap-class? %)
-       (re-matches #"(?:clojure\.(?:lang\.|java\.|core[\$.])|com\.esotericsoftware\.kryo\.).*" (.getName ^Class %)))))
+         (re-matches (re-pattern (str "(?:clojure\\.(?:lang\\.|walk\\.|"
+                                      (clojure.string/join "|" clojure-java-ns)
+                                      "|core[\\$.])|com\\.esotericsoftware\\.kryo\\.).*")) (.getName ^Class %)))))
 
 (def primitive? #{"void" "int" "byte" "short" "long" "char" "boolean" "float" "double"})
 
