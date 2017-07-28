@@ -143,7 +143,8 @@
                              (when-not (primitive? x)
                                (.replace ^String x \/ \.)))]
        (when-some [class (try (Class/forName classname false *classloader*)
-                           (catch ClassNotFoundException _))]
+                           (catch ClassNotFoundException _)
+                           (catch java.lang.NoClassDefFoundError _))]
          class))
     (class? x) x))
 
