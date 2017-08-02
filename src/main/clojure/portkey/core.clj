@@ -257,7 +257,7 @@
 (defn package!
   "Writes f as AWS Lambda deployment packge to out.
    f must be a function of 3 arguments: input, output and context. (See RequestHandler)
-   Additionally, more classes and vars can be specified, focring them to be kept in the
+   Additionally, more classes and vars can be specified, forcing them to be kept in the
    package."
   [out f & keeps]
   (let [fbom (bom f)
