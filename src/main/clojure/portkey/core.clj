@@ -426,61 +426,57 @@
                                 {:stage-name stage
                                  :rest-api-id id}))))
 
-(defn deploy! [f lambda-function-name]
-  (let [bb (-> (java.io.ByteArrayOutputStream.)
-               (doto (package! f))
-               .toByteArray
-               java.nio.ByteBuffer/wrap)]
-    (when-not (try-some (fetch-portkey-role))
-      (let [role (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
-                     (.createRole (donew com.amazonaws.services.identitymanagement.model.CreateRoleRequest
-                                         {:role-name "portkey"
-                                          :assume-role-policy-document (json/generate-string {:Version "2012-10-17"
-                                                                                              :Statement [{:Effect :Allow
-                                                                                                           :Principal {:Service "lambda.amazonaws.com"}
-                                                                                                           :Action "sts:AssumeRole"}]})})))]
-        (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
-            (.putRolePolicy (donew com.amazonaws.services.identitymanagement.model.PutRolePolicyRequest
-                                   {:role-name "portkey"
-                                    :policy-name "portkey_basic_execution"
-                                    :policy-document (json/generate-string {:Version "2012-10-17"
-                                                                            :Statement [{:Effect :Allow
-                                                                                         :Action "logs:CreateLogGroup"
-                                                                                         :Resource "arn:aws:logs:*:*:*"}
-                                                                                        {:Effect "Allow"
-                                                                                         :Action ["logs:CreateLogStream" "logs:PutLogEvents"]
-                                                                                         :Resource ["arn:aws:logs:*:*:log-group:*:*"]}]})})))))
-    (if-not (try-some (get-function lambda-function-name))
-      (let [arn (-> (try-some (fetch-portkey-role)) (.getRole) (.getArn))
-            client (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-            req (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
-                       {:function-name lambda-function-name
-                        :handler "portkey.LambdaStub"
-                        :code {:zip-file bb}
-                        :role arn
-                        :runtime "java8"
-                        :memory-size (int 1536)
-                        :timeout (int 30)})]
-        (let [{:keys [exception result]}
-              (reduce (fn [acc sleep-time]
-                        (try
-                          (reduced {:result (.createFunction client req)})
-                          (catch com.amazonaws.services.lambda.model.InvalidParameterValueException e
-                            (if (.startsWith (.getMessage e) "The role defined for the function cannot be assumed by Lambda")
-                              (do
-                                (Thread/sleep sleep-time)
-                                {:exception e})
-                              (reduced {:exception e})))))
-                      nil
-                      (repeat 20 1000))]
-          (if exception
-            (throw exception)
-            (.getFunctionArn result))))
-      (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-          (.updateFunctionCode (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
-                                      {:function-name lambda-function-name
-                                       :zip-file bb}))
-          (.getFunctionArn)))))
+(defn deploy! [zip-file lambda-function-name]
+  (when-not (try-some (fetch-portkey-role))
+    (let [role (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
+                   (.createRole (donew com.amazonaws.services.identitymanagement.model.CreateRoleRequest
+                                       {:role-name "portkey"
+                                        :assume-role-policy-document (json/generate-string {:Version "2012-10-17"
+                                                                                            :Statement [{:Effect :Allow
+                                                                                                         :Principal {:Service "lambda.amazonaws.com"}
+                                                                                                         :Action "sts:AssumeRole"}]})})))]
+      (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
+          (.putRolePolicy (donew com.amazonaws.services.identitymanagement.model.PutRolePolicyRequest
+                                 {:role-name "portkey"
+                                  :policy-name "portkey_basic_execution"
+                                  :policy-document (json/generate-string {:Version "2012-10-17"
+                                                                          :Statement [{:Effect :Allow
+                                                                                       :Action "logs:CreateLogGroup"
+                                                                                       :Resource "arn:aws:logs:*:*:*"}
+                                                                                      {:Effect "Allow"
+                                                                                       :Action ["logs:CreateLogStream" "logs:PutLogEvents"]
+                                                                                       :Resource ["arn:aws:logs:*:*:log-group:*:*"]}]})})))))
+  (if-not (try-some (get-function lambda-function-name))
+    (let [arn (-> (try-some (fetch-portkey-role)) (.getRole) (.getArn))
+          client (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+          req (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
+                     {:function-name lambda-function-name
+                      :handler "portkey.LambdaStub"
+                      :code {:zip-file zip-file}
+                      :role arn
+                      :runtime "java8"
+                      :memory-size (int 1536)
+                      :timeout (int 30)})]
+      (let [{:keys [exception result]}
+            (reduce (fn [acc sleep-time]
+                      (try
+                        (reduced {:result (.createFunction client req)})
+                        (catch com.amazonaws.services.lambda.model.InvalidParameterValueException e
+                          (if (.startsWith (.getMessage e) "The role defined for the function cannot be assumed by Lambda")
+                            (do
+                              (Thread/sleep sleep-time)
+                              {:exception e})
+                            (reduced {:exception e})))))
+                    nil
+                    (repeat 20 1000))]
+        (if exception
+          (throw exception)
+          (.getFunctionArn result))))
+    (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+        (.updateFunctionCode (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
+                                    {:function-name lambda-function-name
+                                     :zip-file zip-file}))
+        (.getFunctionArn))))
 
 (defn parse-path [template argnames]
   (let [[_ path query] (re-matches #"(.*?)(\?.*)?" template)
@@ -504,7 +500,7 @@
      :query-args (vals query-arg-params)
      :arg-paths arg-paths}))
 
-(defn mount [var-f path]
+(defn mount [var-f path & keeps]
   (let [arg-names (-> var-f meta :arglists first)
         f @var-f
         {:as parsed-path :keys [arg-paths]} (parse-path path arg-names)
@@ -514,7 +510,11 @@
                  (spit out (apply f args))))
         lambda-function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
         api-function-name (-> var-f meta :name name)
-        arn (deploy! wrap lambda-function-name)
+        arn (deploy! (-> (java.io.ByteArrayOutputStream.)
+                         (doto (package! wrap keeps))
+                         .toByteArray
+                         java.nio.ByteBuffer/wrap)
+                     lambda-function-name)
         {:keys [region]} (aws/parse-arn arn)
         id (ensure-api lambda-function-name
                        api-function-name
