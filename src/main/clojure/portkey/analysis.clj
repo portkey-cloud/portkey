@@ -49,8 +49,16 @@
       (throw (ex-info "Can't statically resolve var lookup" {:ns ns :name name}))))
   [true "clojure/lang/Util" "loadWithClass" "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;"]
   (fn [script-base _]
-    (log-dep :class (str script-base clojure.lang.RT/LOADER_SUFFIX))
+    (when (:constant? script-base)
+      #_(log-dep :fake (subs (str (:value script-base) clojure.lang.RT/LOADER_SUFFIX) 1))
+      (log-dep :fake (subs (:value script-base) 1)))
     OBJECT)
+  [true "clojure/lang/Var" "internPrivate" "(Ljava/lang/String;Ljava/lang/String;)Lclojure/lang/Var;"]
+  (fn [ns name]
+    ; is it used by anything but genclass?
+    (if (and (:constant? ns) (:constant? name))
+      (do (log-dep :var-ref (symbol (:value ns) (:value name))) VAR) ; could even be made constant
+      (throw (ex-info "Can't statically resolve var lookup" {:ns ns :name name}))))
   ;; the amount of adhoc interpretations should be minimized
   [true "org/apache/hadoop/util/ReflectionUtils" "newInstance"
    "(Ljava/lang/Class;Lorg/apache/hadoop/conf/Configuration;)Ljava/lang/Object;"]

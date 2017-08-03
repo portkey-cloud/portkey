@@ -56,63 +56,6 @@
          (run! log-classname (.exceptions method))
          (.analyze analyzer (.name class-node) method)))))
 
-#_(defn inspect-class [^Class class]
-   (binding [*classloader* (.getClassLoader class)]
-     (let [log-classname #(log-dep :class %)
-          bytes (bytecode class)
-          rdr (org.objectweb.asm.ClassReader. bytes)
-          class-visitor
-          (proxy [org.objectweb.asm.ClassVisitor] [org.objectweb.asm.Opcodes/ASM4]
-            (visit [version access name sig supername ifaces]
-              (log-classname supername)
-              (doseq [iface ifaces]
-                (log-classname iface)))
-            (visitField [access name ^String desc sig value]
-              (log-classname (.getClassName (org.objectweb.asm.Type/getType desc)))
-              nil)
-            (visitMethod [access method-name mdesc sig exs]
-              (let [strs (atom [])
-                    mtype (org.objectweb.asm.Type/getMethodType mdesc)]
-                (log-classname (.getClassName (.getReturnType mtype)))
-                (doseq [^org.objectweb.asm.Type type (.getArgumentTypes mtype)]
-                  (log-classname (.getClassName type)))
-                (doseq [ex exs]
-                  (log-classname ex))
-                (proxy [org.objectweb.asm.MethodVisitor] [org.objectweb.asm.Opcodes/ASM4]
-                  (visitLdcInsn [x]
-                    (if (string? x)
-                      (swap! strs conj x)
-                      (reset! strs [])))
-                  (visitMethodInsn [opcode ^String owner name desc itf]
-                    (cond
-                      (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
-                        (= owner "java/lang/Class")
-                        (= name "forName"))
-                      (binding [*out* *err*] (println "Blinded by reflection in" class method-name mdesc))
-                      (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
-                        (= owner "clojure/lang/RT")
-                        (= name "var")
-                        (= desc "(Ljava/lang/String;Ljava/lang/String;)Lclojure/lang/Var;")
-                        (<= 2 (count @strs))) ; TODO warn when less than 2
-                      (log-dep :var-ref (symbol (peek (pop @strs)) (peek @strs)))
-                      (and (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
-                        (= owner "clojure/lang/RT")
-                        (= name "classForName")
-                        (= desc "(Ljava/lang/String;)Ljava/lang/Class;")
-                        (<= 1 (count @strs)))
-                      (log-classname (peek @strs))
-                      (or (= opcode org.objectweb.asm.Opcodes/INVOKESTATIC)
-                        (and (= opcode org.objectweb.asm.Opcodes/INVOKESPECIAL) (= "<init>" name)))
-                      (log-classname owner))
-                    (reset! strs []))
-                  (visitFieldInsn [opcode owner name desc]
-                    (when (or (= opcode org.objectweb.asm.Opcodes/GETSTATIC)
-                            (= opcode org.objectweb.asm.Opcodes/PUTSTATIC))
-                      (log-classname owner))
-                    (reset! strs []))
-                  (visitInsn [G__4852] (clojure.core/reset! strs [])) (visitIntInsn [G__4853 G__4854] (clojure.core/reset! strs [])) (visitVarInsn [G__4859 G__4860] (clojure.core/reset! strs [])) (visitIincInsn [G__4861 G__4862] (clojure.core/reset! strs [])) (visitJumpInsn [G__4863 G__4864] (clojure.core/reset! strs [])) (visitTableSwitchInsn [G__4865 G__4866 G__4867 G__4868] (clojure.core/reset! strs [])) (visitLookupSwitchInsn [G__4869 G__4870 G__4871] (clojure.core/reset! strs [])) (visitInvokeDynamicInsn [G__4872 G__4873 G__4874 G__4875] (clojure.core/reset! strs [])) (visitTypeInsn [G__4876 G__4877] (clojure.core/reset! strs [])) (visitMultiANewArrayInsn [G__4878 G__4879] (clojure.core/reset! strs []))))))]
-     (.accept rdr class-visitor 0))))
-
 (defn- bootstrap-class? [^Class class]
   (if-some [cl (.getClassLoader class)]
     (identical? cl (.getClassLoader Class)) ; in case a JVM does not return null for boostrap
@@ -148,21 +91,25 @@
          class))
     (class? x) x))
 
-(defn dep-logger [log!]
+(defn dep-logger [log! log-fake!]
   (fn [type x]
     (case type
       :var (log! x)
       :class (log! (ensure-class x))
       :root-class (run! log! (ou/descendants (ensure-class x)))
-      :var-ref (log! (resolve x)))))
+      :var-ref (log! (clojure.java.api.Clojure/var x))
+      :fake (with-bindings {#_#_clojure.lang.Compiler/LOADER *classloader*}
+              (load (str "/" x))
+              (log-fake! x)))))
 
 (defn bom
   "Computes the bill-of-materials for an object."
   ([root]
     (bom root default-whitelist))
   ([root whitelist?]
-    (let [deps (atom [])]
-      (binding [log-dep (dep-logger #(when-not (or (nil? %) (whitelist? %)) (swap! deps conj %)))]
+    (let [deps (atom []) fakes (atom #{})]
+      (binding [log-dep (dep-logger #(when-not (or (nil? %) (whitelist? %)) (swap! deps conj %))
+                          #(swap! fakes conj %))]
         (let [root-bytes (kryo/freeze root)]
           (loop [todo #{} vars {} classes #{}]
             (let [todo (into todo (comp (remove vars) (remove classes)) @deps)]
@@ -171,25 +118,32 @@
                 (let [todo (disj todo dep)]
                   (cond
                     (var? dep)
-                    (let [bytes (kryo/freeze @dep)]
+                    (let [bytes (kryo/freeze [(:dynamic (meta dep)) @dep])]
                       (recur todo (assoc vars dep bytes) classes))
                     (class? dep)
                     (do
                       (inspect-class dep)
                       (recur todo vars (conj classes dep)))))
-                {:vars vars :classes classes :root root-bytes}))))))))
+                {:vars vars :classes classes :root root-bytes
+                 :fakes @fakes}))))))))
 
 (defn bootstrap
   "Returns a serialized thunk (0-arg fn). This thunk when called returns deserialized root with all vars set."
-  [{:keys [root vars classes]}]
+  [{:keys [root vars classes fakes]}]
   (let [bom' (bom
                (fn []
                  (doseq [[^clojure.lang.Var v bs] vars]
-                   (.bindRoot v (kryo/unfreeze bs)))
+                   (let [[d root] (kryo/unfreeze bs)]
+                     (.bindRoot v root)
+                     (when d
+                       (alter-meta! v assoc :dynamic true)
+                       (.setDynamic v))))
                  (kryo/unfreeze root)))]
     (when-some [new-vars (seq (remove vars (:vars bom')))]
       (throw (ex-info "The boostrap function shouldn't use any new var." {:new-vars new-vars})))
-    (update bom' :classes into classes)))
+    (-> bom'
+      (update :classes into classes)
+      (assoc :fakes fakes))))
 
 (defn zip! 
   "Writes a zip to out."
@@ -263,10 +217,11 @@
   (let [fbom (bom f)
         bom (transduce (comp (map bom) (map #(dissoc % :root)))
               (partial merge-with into) fbom keeps)
-        {:keys [classes root]} (bootstrap bom)
+        {:keys [classes root fakes vars]} (bootstrap bom)
         entries (-> support-entries
                   (assoc "bootstrap.kryo" root)
-                  (into (class-entries classes)))]
+                  (into (class-entries classes))
+                  (into (zipmap (map #(str % ".clj") fakes) (repeat (byte-array 0)))))]
     (zip! out entries)
     out))
 

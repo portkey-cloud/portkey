@@ -55,10 +55,11 @@
     parent))
 
 (defmacro with-deps [deps & body]
-  (let [args (into [] (filter symbol?) (keys &env))]
+  (let [args (into [] (filter symbol?) (keys &env))
+        [requires body] (split-with #(and (seq? %) (= (first %) 'require)) body)]
     `(with-compiler-cl (create-deps-classloader '~deps (clojure.lang.RT/baseLoader))
        (binding [*ns* (find-ns '~(ns-name *ns*))]
-         ((eval '(fn ~args ~@body)) ~@args)))))
+         ((eval '(do ~@requires (fn ~args ~@body))) ~@args)))))
 
 (def ^:dynamic *extras* #{})
 
@@ -124,14 +125,17 @@
   (testing "cheshire parse and generate"
     (is (= "{\"a\":1}"
            (with-deps [[cheshire "5.7.1"]]
-             (invoke (fn [in out ctx]
-                       (spit out (cheshire.core/generate-string (cheshire.core/parse-string (slurp in)))))
-                     "{\"a\": 1}"))))))
+             (do 
+               (require 'cheshire.core)
+               (invoke (fn [in out ctx]
+                        (spit out (cheshire.core/generate-string (cheshire.core/parse-string (slurp in)))))
+                      "{\"a\": 1}")))))))
 
 (deftest timbre-slf4j
   (testing "timbre works"
     (is (not (empty?
-              (with-deps [[com.taoensso/timbre "4.10.0"] ]
+              (with-deps [[com.taoensso/timbre "4.10.0"]]
+                (require 'taoensso.timbre)
                 (invoke (fn [in out ctx]
                           (spit out (with-out-str (taoensso.timbre/info "hello"))))))))))
   (testing "genclass doesn't bother us"
@@ -153,6 +157,7 @@
 (deftest jdbc
   (is (with-deps [[org.postgresql/postgresql "42.1.3.jre7"]
                   [org.clojure/java.jdbc "0.7.0"]]
+        (require '[clojure.java.jdbc :as jdbc])
         (binding [*extras* #{org.postgresql.geometric.PGcircle
                              org.postgresql.geometric.PGline
                              org.postgresql.geometric.PGpath
@@ -161,7 +166,6 @@
                              org.postgresql.util.PGmoney
                              org.postgresql.util.PGInterval}]
           (invoke (fn [in out ctx]
-                    (require '[clojure.java.jdbc :as jdbc])
                     (try
                       (let [db-name (->> #(rand-nth (mapv char (range (int \A) (-> \Z int inc))))
                                          repeatedly
