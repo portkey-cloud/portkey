@@ -109,8 +109,10 @@ public class UCInterpreter extends Interpreter {
             } else if (cst instanceof String) {
                 return new UCValue(Type.getObjectType("java/lang/String"), cst);
             } else if (cst instanceof Type) {
-                int sort = ((Type) cst).getSort();
+                Type type = (Type) cst;
+                int sort = type.getSort();
                 if (sort == Type.OBJECT || sort == Type.ARRAY) {
+                    logdep.invoke(CLASS_KW, (sort == Type.ARRAY ? type.getElementType() : type).getInternalName());
                     return newValue(Type.getObjectType("java/lang/Class"));
                 } else if (sort == Type.METHOD) {
                     return newValue(Type
