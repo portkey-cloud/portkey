@@ -36,25 +36,29 @@
     (throw (ex-info "Can't find" {:class class}))))
 
 (defn inspect-class [^Class class]
-   (binding [*classloader* (.getClassLoader class)]
-     (let [log-classname #(log-dep :class %)
-           bytes (bytecode class)
-           rdr (org.objectweb.asm.ClassReader. bytes)
-           class-node (doto (org.objectweb.asm.tree.ClassNode.)
-                        (as-> cn  (.accept rdr cn 0)))
-           analyzer (org.objectweb.asm.tree.analysis.Analyzer. (portkey.analysis.UCInterpreter.))]
-       (log-classname (.superName class-node))
-       (doseq [iface (.interfaces class-node)]
-         (log-classname iface))
-       (doseq [^org.objectweb.asm.tree.FieldNode field (.fields class-node)]
-         (log-classname (.getClassName (org.objectweb.asm.Type/getType (.desc field)))))
-       (doseq [^org.objectweb.asm.tree.MethodNode method (.methods class-node)
-               :let [mtype (org.objectweb.asm.Type/getMethodType (.desc method))]]
-         (log-classname (.getClassName (.getReturnType mtype)))
-         (doseq [^org.objectweb.asm.Type type (.getArgumentTypes mtype)]
-           (log-classname (.getClassName type)))
-         (run! log-classname (.exceptions method))
-         (.analyze analyzer (.name class-node) method)))))
+  (try
+    (binding [*classloader* (.getClassLoader class)]
+      (let [log-classname #(log-dep :class %)
+            bytes (bytecode class)
+            rdr (org.objectweb.asm.ClassReader. bytes)
+            class-node (doto (org.objectweb.asm.tree.ClassNode.)
+                         (as-> cn  (.accept rdr cn 0)))
+            analyzer (org.objectweb.asm.tree.analysis.Analyzer. (portkey.analysis.UCInterpreter.))]
+        (log-classname (.superName class-node))
+        (doseq [iface (.interfaces class-node)]
+          (log-classname iface))
+        (doseq [^org.objectweb.asm.tree.FieldNode field (.fields class-node)]
+          (log-classname (.getClassName (org.objectweb.asm.Type/getType (.desc field)))))
+        (doseq [^org.objectweb.asm.tree.MethodNode method (.methods class-node)
+                :let [mtype (org.objectweb.asm.Type/getMethodType (.desc method))]]
+          (log-classname (.getClassName (.getReturnType mtype)))
+          (doseq [^org.objectweb.asm.Type type (.getArgumentTypes mtype)]
+            (log-classname (.getClassName type)))
+          (run! log-classname (.exceptions method))
+          (.analyze analyzer (.name class-node) method))))
+    (catch Throwable t
+      (println (str "Failed to inspect class: " (.getName class)))
+      (throw t))))
 
 (defn- bootstrap-class? [^Class class]
   (if-some [cl (.getClassLoader class)]
