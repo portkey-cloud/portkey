@@ -112,7 +112,8 @@ public class UCInterpreter extends Interpreter {
                 Type type = (Type) cst;
                 int sort = type.getSort();
                 if (sort == Type.OBJECT || sort == Type.ARRAY) {
-                    logdep.invoke(CLASS_KW, (sort == Type.ARRAY ? type.getElementType() : type).getInternalName());
+                    Type clazz = sort == Type.ARRAY ? type.getElementType() : type;
+                    if (clazz.getSort() == Type.OBJECT) logdep.invoke(CLASS_KW, clazz.getInternalName());
                     return newValue(Type.getObjectType("java/lang/Class"));
                 } else if (sort == Type.METHOD) {
                     return newValue(Type
