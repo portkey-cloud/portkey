@@ -72,13 +72,16 @@
    "java\\.javadoc"
    "java\\.shell"])
 
+(def white-list-pattern
+  (re-pattern (str "(?:clojure\\.(?:lang\\.|walk\\.|"
+                   (clojure.string/join "|" clojure-java-ns)
+                   "|core[\\$.])|com\\.esotericsoftware\\.kryo\\.).*")))
+
 (def default-whitelist
   #(if (var? %)
      (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'carbonite.serializer})
      (or (bootstrap-class? %)
-         (re-matches (re-pattern (str "(?:clojure\\.(?:lang\\.|walk\\.|"
-                                      (clojure.string/join "|" clojure-java-ns)
-                                      "|core[\\$.])|com\\.esotericsoftware\\.kryo\\.).*")) (.getName ^Class %)))))
+         (re-matches white-list-pattern (.getName ^Class %)))))
 
 (def primitive? #{"void" "int" "byte" "short" "long" "char" "boolean" "float" "double"})
 
