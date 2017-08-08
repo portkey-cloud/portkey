@@ -57,8 +57,7 @@
           (run! log-classname (.exceptions method))
           (.analyze analyzer (.name class-node) method))))
     (catch Throwable t
-      (println (str "Failed to inspect class: " (.getName class)))
-      (throw t))))
+      (throw (Exception. (str "Failed to inspect class: " (.getName class)) t)))))
 
 (defn- bootstrap-class? [^Class class]
   (if-some [cl (.getClassLoader class)]
