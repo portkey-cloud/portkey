@@ -176,3 +176,13 @@
                         false)
                       (catch org.postgresql.util.PSQLException t
                         true))))))))
+
+(deftest amazonica
+  (is (= "0"
+         (with-deps [[amazonica "0.3.108"]]
+           (require '[amazonica.aws.cloudwatch :as cw])
+           (invoke (fn [in out ctx]
+                     (spit out (-> (cw/list-metrics {:endpoint "eu-west-1"} :namespace "lol")
+                                   :metrics
+                                   count
+                                   str))))))))
