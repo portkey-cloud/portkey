@@ -146,9 +146,10 @@
               (with-deps [[com.taoensso/timbre "4.10.0"]
                           [org.slf4j/slf4j-api "1.7.14"]
                           [com.fzakaria/slf4j-timbre "0.3.7"]]
-                (invoke (fn [in out ctx]
-                          (let [logger (org.slf4j.LoggerFactory/getLogger "test")]
-                            (spit out (with-out-str (.info logger "world"))))))))))))
+                (binding [*extras* #{org.slf4j.impl.StaticLoggerBinder}]
+                  (invoke (fn [in out ctx]
+                            (let [logger (org.slf4j.LoggerFactory/getLogger "test")]
+                              (spit out (with-out-str (.info logger "world")))))))))))))
 
 (deftest parse-path
   (is (= (pk/parse-path "/sum?x={x}&y={y}" ['x 'y])
