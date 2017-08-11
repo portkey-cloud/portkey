@@ -2,7 +2,9 @@
   (:require [clojure.test :refer :all]
     [clojure.java.io :as io]
     [portkey.core :as pk]
-    [cemerick.pomegranate.aether :as mvn]))
+    [cemerick.pomegranate.aether :as mvn]
+    [clojure.java.jdbc :as jdbc])
+  (:import (com.opentable.db.postgres.embedded EmbeddedPostgres)))
 
 (defn temp-dir [prefix]
   (let [p (java.io.File. (System/getProperty "java.io.tmpdir"))
@@ -154,28 +156,36 @@
           :query-args '("x" "y")
           :arg-paths [["querystring" "x"] ["querystring" "y"]]})))
 
+(defmacro with-db [& body]
+  `(with-open [pg# (-> (EmbeddedPostgres/builder)
+                       (.setPort 57664)
+                       (.start))]
+     (doseq [sql# ["create table foo (id int)"
+                   "insert into foo values (1)"]]
+       (jdbc/execute! {:datasource (.getPostgresDatabase pg#)} [sql#]))
+     (do ~@body)))
+
 (deftest jdbc
-  (is (with-deps [[org.postgresql/postgresql "42.1.3.jre7"]
-                  [org.clojure/java.jdbc "0.7.0"]]
-        (require '[clojure.java.jdbc :as jdbc])
-        (binding [*extras* #{org.postgresql.geometric.PGcircle
-                             org.postgresql.geometric.PGline
-                             org.postgresql.geometric.PGpath
-                             org.postgresql.geometric.PGpolygon
-                             org.postgresql.geometric.PGlseg
-                             org.postgresql.util.PGmoney
-                             org.postgresql.util.PGInterval}]
-          (invoke (fn [in out ctx]
-                    (try
-                      (let [db-name (->> #(rand-nth (mapv char (range (int \A) (-> \Z int inc))))
-                                         repeatedly
-                                         (take 10)
-                                         (apply str))]
-                        (Class/forName "org.postgresql.Driver")
-                        (jdbc/query {:connection-uri (str "jdbc:postgresql://localhost/" db-name)} ["select * from foo"])
-                        false)
-                      (catch org.postgresql.util.PSQLException t
-                        true))))))))
+  (with-db
+    (is (= "1"
+           (with-deps [[org.postgresql/postgresql "42.1.3.jre7"]
+                       [org.clojure/java.jdbc "0.7.0"]]
+             (require '[clojure.java.jdbc :as jdbc])
+             (binding [*extras* #{org.postgresql.geometric.PGcircle
+                                  org.postgresql.geometric.PGline
+                                  org.postgresql.geometric.PGpath
+                                  org.postgresql.geometric.PGpolygon
+                                  org.postgresql.geometric.PGlseg
+                                  org.postgresql.util.PGmoney
+                                  org.postgresql.util.PGInterval}]
+               (invoke (fn [in out ctx]
+                         (Class/forName "org.postgresql.Driver")
+                         (->> (jdbc/query "jdbc:postgresql://localhost:57664/postgres?user=postgres"
+                                          ["select * from foo"]
+                                          {:result-set-fn first
+                                           :row-fn :id})
+                              str
+                              (spit out))))))))))
 
 (deftest amazonica
   (is (= "0"

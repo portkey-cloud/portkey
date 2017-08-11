@@ -15,4 +15,6 @@
                  [org.apache.httpcomponents/httpcore "4.4.6"]
                  [cheshire "5.7.1"]]
   :java-source-paths ["src/main/java"]
-  :source-paths ["src/main/clojure"])
+  :source-paths ["src/main/clojure"]
+  :profiles {:dev {:dependencies [[com.opentable.components/otj-pg-embedded "0.7.1"]
+                                  [org.clojure/java.jdbc "0.7.0"]]}})
