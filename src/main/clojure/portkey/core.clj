@@ -78,7 +78,7 @@
 
 (def default-whitelist
   #(if (var? %)
-     (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'carbonite.serializer})
+     (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'portkey.ouroboros 'carbonite.serializer})
      (or (bootstrap-class? %)
          (re-matches white-list-pattern (.getName ^Class %)))))
 
@@ -90,11 +90,13 @@
     (when-some [classname (if-some [[_ t] (re-matches #"\[+(?:[ZBCDFIJS]|L(.*);)" x)]
                              t
                              (when-not (primitive? x)
-                               (.replace ^String x \/ \.)))]
-       (when-some [class (try (Class/forName classname false *classloader*)
-                           (catch ClassNotFoundException _)
-                           (catch java.lang.NoClassDefFoundError _))]
-         class))
+                               (.replace ^String x \/ \.)))] 
+      (when-some [class (try (Class/forName classname false *classloader*)
+                          (catch ClassNotFoundException _)
+                          (catch java.lang.IncompatibleClassChangeError _
+                            (prn 'java.lang.IncompatibleClassChangeError x))
+                          (catch java.lang.NoClassDefFoundError _))]
+        class))
     (class? x) x))
 
 (defn dep-logger [log! log-fake!]

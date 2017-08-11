@@ -24,6 +24,9 @@ import static clojure.java.api.Clojure.*;
 public class UCInterpreter extends Interpreter {
     public static final IFn invoke;
     public static final IFn logdep;
+    public static final IFn merge;
+    public static final IFn newValue;
+    public static final Keyword TYPE_KW = Keyword.intern("type");
     public static final Keyword CLASS_KW = Keyword.intern("class");
     public static final Keyword ROOTCLASS_KW = Keyword.intern("root-class");
     
@@ -31,7 +34,17 @@ public class UCInterpreter extends Interpreter {
         var("clojure.core/require").invoke(read("portkey.analysis"), read("portkey.logdep"));
         invoke = var("portkey.analysis/invoke");
         logdep = var("portkey.logdep/log-dep");
+        merge = var("portkey.analysis/merge-vals");
+        newValue = var("portkey.analysis/new-value");
     }
+
+    public static final Value REFERENCE_VALUE = (Value) newValue.invoke(Type.getObjectType("java/lang/Object"));;
+    public static final Value INT_VALUE = (Value) newValue.invoke(Type.INT_TYPE);
+    public static final Value DOUBLE_VALUE = (Value) newValue.invoke(Type.DOUBLE_TYPE);
+    public static final Value LONG_VALUE = (Value) newValue.invoke(Type.LONG_TYPE);
+    public static final Value FLOAT_VALUE = (Value) newValue.invoke(Type.FLOAT_TYPE);
+    public static final Value RETURNADDRESS_VALUE = (Value) newValue.invoke(Type.VOID_TYPE);
+    public static final Value UNINITIALIZED_VALUE = (Value) newValue.invoke(null);
     
     static void logdep(Type t) {
         logdep.invoke(CLASS_KW, t.getClassName());
@@ -48,7 +61,7 @@ public class UCInterpreter extends Interpreter {
     @Override
     public Value newValue(final Type type) {
         if (type == null) {
-            return UCValue.UNINITIALIZED_VALUE;
+            return UNINITIALIZED_VALUE;
         }
         switch (type.getSort()) {
         case Type.VOID:
@@ -58,16 +71,16 @@ public class UCInterpreter extends Interpreter {
         case Type.BYTE:
         case Type.SHORT:
         case Type.INT:
-            return UCValue.INT_VALUE;
+            return INT_VALUE;
         case Type.FLOAT:
-            return UCValue.FLOAT_VALUE;
+            return FLOAT_VALUE;
         case Type.LONG:
-            return UCValue.LONG_VALUE;
+            return LONG_VALUE;
         case Type.DOUBLE:
-            return UCValue.DOUBLE_VALUE;
+            return DOUBLE_VALUE;
         case Type.ARRAY:
         case Type.OBJECT:
-            return UCValue.REFERENCE_VALUE;
+            return REFERENCE_VALUE;
         default:
             throw new Error("Internal error");
         }
@@ -79,35 +92,35 @@ public class UCInterpreter extends Interpreter {
         switch (insn.getOpcode()) {
         case ACONST_NULL:
             return newValue(Type.getObjectType("null"));
-        case ICONST_M1: return new UCValue(Type.INT_TYPE, -1);
-        case ICONST_0: return new UCValue(Type.INT_TYPE, 0);
-        case ICONST_1: return new UCValue(Type.INT_TYPE, 1);
-        case ICONST_2: return new UCValue(Type.INT_TYPE, 2);
-        case ICONST_3: return new UCValue(Type.INT_TYPE, 3);
-        case ICONST_4: return new UCValue(Type.INT_TYPE, 4);
-        case ICONST_5: return new UCValue(Type.INT_TYPE, 5);
-        case LCONST_0: return new UCValue(Type.LONG_TYPE, 0);
-        case LCONST_1: return new UCValue(Type.LONG_TYPE, 1);
-        case FCONST_0: return new UCValue(Type.FLOAT_TYPE, 0);
-        case FCONST_1: return new UCValue(Type.FLOAT_TYPE, 1);
-        case FCONST_2: return new UCValue(Type.FLOAT_TYPE, 2);
-        case DCONST_0: return new UCValue(Type.DOUBLE_TYPE, 0);
-        case DCONST_1: return new UCValue(Type.DOUBLE_TYPE, 1);
+        case ICONST_M1: return (Value) newValue.invoke(Type.INT_TYPE, -1);
+        case ICONST_0: return (Value) newValue.invoke(Type.INT_TYPE, 0);
+        case ICONST_1: return (Value) newValue.invoke(Type.INT_TYPE, 1);
+        case ICONST_2: return (Value) newValue.invoke(Type.INT_TYPE, 2);
+        case ICONST_3: return (Value) newValue.invoke(Type.INT_TYPE, 3);
+        case ICONST_4: return (Value) newValue.invoke(Type.INT_TYPE, 4);
+        case ICONST_5: return (Value) newValue.invoke(Type.INT_TYPE, 5);
+        case LCONST_0: return (Value) newValue.invoke(Type.LONG_TYPE, 0);
+        case LCONST_1: return (Value) newValue.invoke(Type.LONG_TYPE, 1);
+        case FCONST_0: return (Value) newValue.invoke(Type.FLOAT_TYPE, 0);
+        case FCONST_1: return (Value) newValue.invoke(Type.FLOAT_TYPE, 1);
+        case FCONST_2: return (Value) newValue.invoke(Type.FLOAT_TYPE, 2);
+        case DCONST_0: return (Value) newValue.invoke(Type.DOUBLE_TYPE, 0);
+        case DCONST_1: return (Value) newValue.invoke(Type.DOUBLE_TYPE, 1);
         case BIPUSH: 
         case SIPUSH:
-            return new UCValue(Type.INT_TYPE, ((IntInsnNode) insn).operand);
+            return (Value) newValue.invoke(Type.INT_TYPE, ((IntInsnNode) insn).operand);
         case LDC:
             Object cst = ((LdcInsnNode) insn).cst;
             if (cst instanceof Integer) {
-                return new UCValue(Type.INT_TYPE, cst);
+                return (Value) newValue.invoke(Type.INT_TYPE, cst);
             } else if (cst instanceof Float) {
-                return new UCValue(Type.FLOAT_TYPE, cst);
+                return (Value) newValue.invoke(Type.FLOAT_TYPE, cst);
             } else if (cst instanceof Long) {
-                return new UCValue(Type.LONG_TYPE, cst);
+                return (Value) newValue.invoke(Type.LONG_TYPE, cst);
             } else if (cst instanceof Double) {
-                return new UCValue(Type.DOUBLE_TYPE, cst);
+                return (Value) newValue.invoke(Type.DOUBLE_TYPE, cst);
             } else if (cst instanceof String) {
-                return new UCValue(Type.getObjectType("java/lang/String"), cst);
+                return (Value) newValue.invoke(Type.getObjectType("java/lang/String"), cst);
             } else if (cst instanceof Type) {
                 Type type = (Type) cst;
                 int sort = type.getSort();
@@ -130,7 +143,7 @@ public class UCInterpreter extends Interpreter {
                         + cst);
             }
         case JSR:
-            return UCValue.RETURNADDRESS_VALUE;
+            return RETURNADDRESS_VALUE;
         case GETSTATIC:
             logdep(((FieldInsnNode) insn).owner);
             return newValue(Type.getType(((FieldInsnNode) insn).desc));
@@ -149,8 +162,7 @@ public class UCInterpreter extends Interpreter {
 
     @Override
     public Value unaryOperation(final AbstractInsnNode insn,
-            final Value value_) throws AnalyzerException {
-        UCValue value = (UCValue) value_;
+            final Value value) throws AnalyzerException {
         switch (insn.getOpcode()) {
         case INEG:
         case IINC:
@@ -160,22 +172,22 @@ public class UCInterpreter extends Interpreter {
         case I2B:
         case I2C:
         case I2S:
-            return UCValue.INT_VALUE;
+            return INT_VALUE;
         case FNEG:
         case I2F:
         case L2F:
         case D2F:
-            return UCValue.FLOAT_VALUE;
+            return FLOAT_VALUE;
         case LNEG:
         case I2L:
         case F2L:
         case D2L:
-            return UCValue.LONG_VALUE;
+            return LONG_VALUE;
         case DNEG:
         case I2D:
         case L2D:
         case F2D:
-            return UCValue.DOUBLE_VALUE;
+            return DOUBLE_VALUE;
         case IFEQ:
         case IFNE:
         case IFLT:
@@ -221,13 +233,13 @@ public class UCInterpreter extends Interpreter {
             String desc = ((TypeInsnNode) insn).desc;
             return newValue(Type.getType("[" + Type.getObjectType(desc)));
         case ARRAYLENGTH:
-            return UCValue.INT_VALUE;
+            return INT_VALUE;
         case ATHROW:
             return null;
         case CHECKCAST:
             desc = ((TypeInsnNode) insn).desc;
             Type type = Type.getObjectType(desc);
-            if (value.unknown) {
+            if (null == (TYPE_KW.invoke(value))) {
                 logdep.invoke(ROOTCLASS_KW, type.getClassName());
             } else {
                 logdep.invoke(CLASS_KW, type.getClassName());
@@ -236,12 +248,12 @@ public class UCInterpreter extends Interpreter {
         case INSTANCEOF:
             desc = ((TypeInsnNode) insn).desc;
             type = Type.getObjectType(desc);
-            if (value.unknown) {
+            if (null == (TYPE_KW.invoke(value))) {
                 logdep.invoke(ROOTCLASS_KW, type.getClassName());
             } else {
                 logdep.invoke(CLASS_KW, type.getClassName());
             }
-            return UCValue.INT_VALUE;
+            return INT_VALUE;
         case MONITORENTER:
         case MONITOREXIT:
         case IFNULL:
@@ -272,14 +284,14 @@ public class UCInterpreter extends Interpreter {
         case IAND:
         case IOR:
         case IXOR:
-            return UCValue.INT_VALUE;
+            return INT_VALUE;
         case FALOAD:
         case FADD:
         case FSUB:
         case FMUL:
         case FDIV:
         case FREM:
-            return UCValue.FLOAT_VALUE;
+            return FLOAT_VALUE;
         case LALOAD:
         case LADD:
         case LSUB:
@@ -292,22 +304,22 @@ public class UCInterpreter extends Interpreter {
         case LAND:
         case LOR:
         case LXOR:
-            return UCValue.LONG_VALUE;
+            return LONG_VALUE;
         case DALOAD:
         case DADD:
         case DSUB:
         case DMUL:
         case DDIV:
         case DREM:
-            return UCValue.DOUBLE_VALUE;
+            return DOUBLE_VALUE;
         case AALOAD:
-            return UCValue.REFERENCE_VALUE;
+            return REFERENCE_VALUE;
         case LCMP:
         case FCMPL:
         case FCMPG:
         case DCMPL:
         case DCMPG:
-            return UCValue.INT_VALUE;
+            return INT_VALUE;
         case IF_ICMPEQ:
         case IF_ICMPNE:
         case IF_ICMPLT:
@@ -369,10 +381,6 @@ public class UCInterpreter extends Interpreter {
 
     @Override
     public Value merge(final Value v, final Value w) {
-        // is this enough?
-        if (v.equals(w)) return v;
-        if (((UCValue) v).type == null && w.getSize() == 1) return w;
-        if (((UCValue) w).type == null && v.getSize() == 1) return v;
-        return UCValue.UNINITIALIZED_VALUE;
+        return (Value) merge.invoke(v, w);
     }
 }

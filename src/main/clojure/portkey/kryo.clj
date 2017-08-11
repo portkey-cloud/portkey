@@ -19,6 +19,13 @@
        (if-some [ns-name (some-> v .ns .name)]
          (.writeString output (str ns-name "/" (.sym v)))
          (throw (ex-info "TODO non interned vars" {:var v})))))
+   clojure.lang.Namespace
+   (serializer
+     (fn [_ k ^com.esotericsoftware.kryo.io.Input input type]
+       (let [ns-name (symbol (.readString input))]
+         (clojure.lang.Namespace/findOrCreate ns-name)))
+     (fn [_ k ^com.esotericsoftware.kryo.io.Output output ^clojure.lang.Namespace ns]
+       (.writeString output (name (.name ns)))))
    clojure.lang.ITransientCollection
    (serializer
      (fn read-transient [_ ^com.esotericsoftware.kryo.Kryo kryo ^com.esotericsoftware.kryo.io.Input input class]
