@@ -395,7 +395,7 @@
                                 {:stage-name stage
                                  :rest-api-id id}))))
 
-(defn deploy! [f lambda-function-name & keeps]
+(defn deploy! [f lambda-function-name & {:keys [keeps environment-variables]}]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f keeps))
                .toByteArray
@@ -429,7 +429,8 @@
                         :role arn
                         :runtime "java8"
                         :memory-size (int 1536)
-                        :timeout (int 30)})]
+                        :timeout (int 30)
+                        :environment {:variables environment-variables}})]
         (let [{:keys [exception result]}
               (reduce (fn [acc sleep-time]
                         (try
@@ -445,11 +446,16 @@
           (if exception
             (throw exception)
             (.getFunctionArn result))))
-      (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-          (.updateFunctionCode (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
-                                      {:function-name lambda-function-name
-                                       :zip-file bb}))
-          (.getFunctionArn)))))
+      (let [arn (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+                    (.updateFunctionCode (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
+                                                {:function-name lambda-function-name
+                                                 :zip-file bb}))
+                    (.getFunctionArn))]
+        (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+            (.updateFunctionConfiguration (donew com.amazonaws.services.lambda.model.UpdateFunctionConfigurationRequest
+                                                 {:function-name lambda-function-name
+                                                  :environment {:variables environment-variables}})))
+        arn))))
 
 (defn parse-path [template argnames]
   (let [[_ path query] (re-matches #"(.*?)(\?.*)?" template)
@@ -473,7 +479,7 @@
      :query-args (vals query-arg-params)
      :arg-paths arg-paths}))
 
-(defn mount [var-f path & {:keys [keeps content-type]
+(defn mount [var-f path & {:keys [keeps content-type environment-variables]
                            :or {content-type "application/json"}}]
   (let [arg-names (-> var-f meta :arglists first)
         f @var-f
@@ -484,7 +490,9 @@
                  (spit out (apply f args))))
         lambda-function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
         api-function-name (-> var-f meta :name name)
-        arn (deploy! wrap lambda-function-name keeps)
+        arn (deploy! wrap lambda-function-name
+                     :keeps keeps
+                     :environment-variables environment-variables)
         {:keys [region]} (aws/parse-arn arn)
         id (ensure-api lambda-function-name
                        api-function-name
