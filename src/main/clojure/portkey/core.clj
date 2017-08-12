@@ -473,7 +473,8 @@
      :query-args (vals query-arg-params)
      :arg-paths arg-paths}))
 
-(defn mount [var-f path & keeps]
+(defn mount [var-f path & {:keys [keeps content-type]
+                           :or {content-type "application/json"}}]
   (let [arg-names (-> var-f meta :arglists first)
         f @var-f
         {:as parsed-path :keys [arg-paths]} (parse-path path arg-names)
@@ -487,7 +488,7 @@
         {:keys [region]} (aws/parse-arn arn)
         id (ensure-api lambda-function-name
                        api-function-name
-                       parsed-path)
+                       (assoc parsed-path :content-type content-type))
         stage "repl"]
     (deploy-api id stage)
     {:url (str "https://" id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
