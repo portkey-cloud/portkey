@@ -210,10 +210,13 @@
           (< i 100) (recur (inc i))
           :else (throw (IllegalStateException. (str "Can't create tmp dir prefixed by " (pr-str base) " after " i " collisions."))))))))
 
+(defn- resource-url [path]
+  (.getResource (.getContextClassLoader (Thread/currentThread)) path))
+
 (def ^:private support-entries
   (-> support-deps
     (into (for [clj ["portkey/logdep.clj" "portkey/kryo.clj"]]
-            [clj (.getResource (.getContextClassLoader (Thread/currentThread)) clj)]))
+            [clj (resource-url clj)]))
     (into (class-entries (conj (:classes (bom portkey.LambdaStub)) portkey.SerializerStub)))))
 
 (defn package!
@@ -223,11 +226,14 @@
    package."
   [out f & keeps]
   (let [fbom (bom f)
+        resources (into {} (comp (filter string?) (map (fn [path] [path (resource-url path)]))) keeps)
+        keeps (remove string? keeps)
         bom (transduce (comp (map bom) (map #(dissoc % :root)))
               (partial merge-with into) fbom keeps)
         {:keys [classes root fakes vars]} (bootstrap bom)
         entries (-> support-entries
                   (assoc "bootstrap.kryo" root)
+                  (into resources)
                   (into (class-entries classes))
                   (into (zipmap (map #(str % ".clj") fakes) (repeat (byte-array 0)))))]
     (zip! out entries)

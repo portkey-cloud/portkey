@@ -193,8 +193,11 @@
   (is (= "0"
          (with-deps [[amazonica "0.3.108"]]
            (require '[amazonica.aws.cloudwatch :as cw])
-           (invoke (fn [in out ctx]
-                     (spit out (-> (cw/list-metrics {:endpoint "eu-west-1"} :namespace "lol")
+           (binding [*extras* #{"com/amazonaws/internal/config/awssdk_config_default.json"
+                                com.amazonaws.internal.config.HostRegexToRegionMappingJsonHelper
+                                com.amazonaws.internal.config.HttpClientConfigJsonHelper}]
+             (invoke (fn [in out ctx]
+                       (spit out (-> (cw/list-metrics {:endpoint "eu-west-1"} :namespace "lol")
                                    :metrics
                                    count
-                                   str))))))))
+                                   str)))))))))
