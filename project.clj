@@ -9,7 +9,7 @@
                  [com.esotericsoftware/kryo "4.0.0"]
                  [com.twitter/carbonite "1.4.0"
                  :exclusions [com.esotericsoftware.kryo/kryo]]
-                 [com.amazonaws/aws-java-sdk "1.11.63"]
+                 [com.amazonaws/aws-java-sdk "1.11.166"]
                  [com.amazonaws/aws-lambda-java-core "1.1.0"]
                  [com.cemerick/pomegranate "0.3.1"]
                  [org.apache.httpcomponents/httpcore "4.4.6"]
