@@ -10,7 +10,7 @@
     {:region region
      :account account}))
 
-(defn swagger-doc [api-function-name function-arn {:keys [path path-args query-args]}]
+(defn swagger-doc [api-function-name function-arn {:keys [path path-args query-args content-type]}]
   {"swagger" "2.0"
    "info" {"version" (.format formatter (ZonedDateTime/now))
            "title" "portkey"}
@@ -20,7 +20,7 @@
    {path
     {"get"
      {"consumes" ["application/json"]
-      "produces" ["application/json"]
+      "produces" [content-type]
       "parameters"
       (concat
         (for [arg query-args]

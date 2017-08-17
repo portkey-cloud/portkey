@@ -70,12 +70,16 @@ The following AWS service actions are used by portkey, define them in for exampl
         "lambda:CreateFunction",
         "lambda:UpdateFunctionCode",
         "lambda:InvokeFunction",
+        "lambda:UpdateFunctionConfiguration",
         "apigateway:*",
         "iam:GetRole",
         "iam:CreateRole",
         "iam:PutRolePolicy",
-        "iam:PassRole"
-      ]
+        "iam:PassRole",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeVpcs"
+        ]
     }
   ]
 }

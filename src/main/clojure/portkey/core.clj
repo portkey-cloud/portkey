@@ -245,25 +245,27 @@
     (= Boolean class)))
 
 (defn- as-doto* [^Class class m]
-  (let [setters (reduce (partial merge-with into) {}
-                  (for [m (.getMethods class)
-                        :let [name (.getName m)
-                              params (.getParameterTypes m)]
-                        :when (.startsWith name "set")
-                        :when (= 1 (count params))]
-                    {name #{(aget params 0)}}))
-        setter-call (fn [[k v]]
-                      (let [mname (str/replace (str "set-" (name k)) #"-(.)" (fn [[_ ^String c]] (.toUpperCase c)))
-                            types (setters mname)]
-                        (if (map? v)
-                          (let [types (remove atomic? types)]
-                            (case (count types)
-                              0 (throw (IllegalStateException. (str "No bean for method " mname " on class " class)))
-                              1 `(~(symbol (str "." mname)) ~(as-doto* (first types) v))
-                              (throw (IllegalStateException. (str "Too many overrides for method " mname " on class " class)))))
-                          `(~(symbol (str "." mname)) ~v))))]
-    `(doto (new ~(symbol (.getName class)))
-       ~@(map setter-call m))))
+  (if (= java.util.Map class)
+    m
+    (let [setters (reduce (partial merge-with into) {}
+                          (for [m (.getMethods class)
+                                :let [name (.getName m)
+                                      params (.getParameterTypes m)]
+                                :when (.startsWith name "set")
+                                :when (= 1 (count params))]
+                            {name #{(aget params 0)}}))
+          setter-call (fn [[k v]]
+                        (let [mname (str/replace (str "set-" (name k)) #"-(.)" (fn [[_ ^String c]] (.toUpperCase c)))
+                              types (setters mname)]
+                          (if (map? v)
+                            (let [types (remove atomic? types)]
+                              (case (count types)
+                                0 (throw (IllegalStateException. (str "No bean for method " mname " on class " class)))
+                                1 `(~(symbol (str "." mname)) ~(as-doto* (first types) v))
+                                (throw (IllegalStateException. (str "Too many overrides for method " mname " on class " class)))))
+                            `(~(symbol (str "." mname)) ~v))))]
+      `(doto (new ~(symbol (.getName class)))
+         ~@(map setter-call m)))))
 
 (defn- aws-name-munge [name]
   (str/replace name #"(_)|(\.)|(/)|([^a-zA-Z0-9-_])"
@@ -395,7 +397,26 @@
                                 {:stage-name stage
                                  :rest-api-id id}))))
 
-(defn deploy! [f lambda-function-name & keeps]
+(defn fetch-subnet-ids []
+  (->> (build com.amazonaws.services.ec2.AmazonEC2ClientBuilder)
+       (.describeSubnets)
+       (.getSubnets)
+       (mapv #(.getSubnetId %))))
+
+(defn fetch-security-group-ids [security-group-names]
+  (->> (build com.amazonaws.services.ec2.AmazonEC2ClientBuilder)
+       (.describeSecurityGroups)
+       (.getSecurityGroups)
+       (filter #(security-group-names (.getGroupName %)))
+       (mapv #(.getGroupId %))))
+
+(defn parse-vpc-config [{:keys [subnet-ids security-group-ids security-groups]}]
+  (cond-> {}
+    (= subnet-ids :all) (assoc :subnet-ids (fetch-subnet-ids))
+    security-group-ids (assoc :security-group-ids security-group-ids)
+    security-groups (assoc :security-group-ids (fetch-security-group-ids (set security-groups)))))
+
+(defn deploy! [f lambda-function-name & {:keys [keeps environment-variables vpc-config]}]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f keeps))
                .toByteArray
@@ -411,25 +432,34 @@
         (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
             (.putRolePolicy (donew com.amazonaws.services.identitymanagement.model.PutRolePolicyRequest
                                    {:role-name "portkey"
-                                    :policy-name "portkey_basic_execution"
+                                    :policy-name "lambda_execution"
                                     :policy-document (json/generate-string {:Version "2012-10-17"
                                                                             :Statement [{:Effect :Allow
                                                                                          :Action "logs:CreateLogGroup"
                                                                                          :Resource "arn:aws:logs:*:*:*"}
                                                                                         {:Effect "Allow"
-                                                                                         :Action ["logs:CreateLogStream" "logs:PutLogEvents"]
-                                                                                         :Resource ["arn:aws:logs:*:*:log-group:*:*"]}]})})))))
+                                                                                         :Action ["logs:CreateLogStream"
+                                                                                                  "logs:PutLogEvents"]
+                                                                                         :Resource "arn:aws:logs:*:*:log-group:*:*"}
+                                                                                        {:Effect "Allow"
+                                                                                         :Action ["ec2:CreateNetworkInterface"
+                                                                                                  "ec2:DescribeNetworkInterfaces"
+                                                                                                  "ec2:DeleteNetworkInterface"
+                                                                                                  "kms:Decrypt"]
+                                                                                         :Resource "*"}]})})))))
     (if-not (try-some (get-function lambda-function-name))
       (let [arn (-> (try-some (fetch-portkey-role)) (.getRole) (.getArn))
             client (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-            req (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
-                       {:function-name lambda-function-name
-                        :handler "portkey.LambdaStub"
-                        :code {:zip-file bb}
-                        :role arn
-                        :runtime "java8"
-                        :memory-size (int 1536)
-                        :timeout (int 30)})]
+            req (eval (as-doto* com.amazonaws.services.lambda.model.CreateFunctionRequest
+                                (cond-> {:function-name lambda-function-name
+                                         :handler "portkey.LambdaStub"
+                                         :code {:zip-file bb}
+                                         :role arn
+                                         :runtime "java8"
+                                         :memory-size (int 1536)
+                                         :timeout (int 30)
+                                         :environment {:variables environment-variables}}
+                                  vpc-config (assoc :vpc-config (parse-vpc-config vpc-config)))))]
         (let [{:keys [exception result]}
               (reduce (fn [acc sleep-time]
                         (try
@@ -445,11 +475,17 @@
           (if exception
             (throw exception)
             (.getFunctionArn result))))
-      (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-          (.updateFunctionCode (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
-                                      {:function-name lambda-function-name
-                                       :zip-file bb}))
-          (.getFunctionArn)))))
+      (let [arn (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+                    (.updateFunctionCode (donew com.amazonaws.services.lambda.model.UpdateFunctionCodeRequest
+                                                {:function-name lambda-function-name
+                                                 :zip-file bb}))
+                    (.getFunctionArn))]
+        (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
+            (.updateFunctionConfiguration (eval (as-doto* com.amazonaws.services.lambda.model.UpdateFunctionConfigurationRequest
+                                                          (cond-> {:function-name lambda-function-name
+                                                                   :environment {:variables environment-variables}}
+                                                            vpc-config (assoc :vpc-config (parse-vpc-config vpc-config)))))))
+        arn))))
 
 (defn parse-path [template argnames]
   (let [[_ path query] (re-matches #"(.*?)(\?.*)?" template)
@@ -473,7 +509,8 @@
      :query-args (vals query-arg-params)
      :arg-paths arg-paths}))
 
-(defn mount [var-f path & keeps]
+(defn mount [var-f path & {:keys [keeps content-type environment-variables vpc-config]
+                           :or {content-type "application/json"}}]
   (let [arg-names (-> var-f meta :arglists first)
         f @var-f
         {:as parsed-path :keys [arg-paths]} (parse-path path arg-names)
@@ -483,11 +520,14 @@
                  (spit out (apply f args))))
         lambda-function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
         api-function-name (-> var-f meta :name name)
-        arn (deploy! wrap lambda-function-name keeps)
+        arn (deploy! wrap lambda-function-name
+                     :keeps keeps
+                     :environment-variables environment-variables
+                     :vpc-config vpc-config)
         {:keys [region]} (aws/parse-arn arn)
         id (ensure-api lambda-function-name
                        api-function-name
-                       parsed-path)
+                       (assoc parsed-path :content-type content-type))
         stage "repl"]
     (deploy-api id stage)
     {:url (str "https://" id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
