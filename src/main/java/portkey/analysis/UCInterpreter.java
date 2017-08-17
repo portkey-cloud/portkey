@@ -366,11 +366,8 @@ public class UCInterpreter extends Interpreter {
         }
         Type ret = Type.getReturnType(minsn.desc);
         logdep(ret);
-        if (opcode == INVOKESPECIAL) {
-            return newValue(ret);
-        } else {
-            return (Value) invoke.invoke(opcode == INVOKESTATIC, minsn.owner, minsn.name, minsn.desc, values);
-        }
+        // INVOKEVIRTUAL and INVOKESPECIAL are cobbled together for analysis.
+        return (Value) invoke.invoke(opcode == INVOKESTATIC, minsn.owner, minsn.name, minsn.desc, values);
     }
 
     @Override
