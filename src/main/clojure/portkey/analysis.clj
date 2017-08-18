@@ -86,10 +86,30 @@
   [false "org/apache/hadoop/conf/Configuration" "getClass"
    "(Ljava/lang/String;Ljava/lang/Class;Ljava/lang/Class;)Ljava/lang/Class;"]
   (fn [conf classname parent iface]
-    (abstract-load-class classname))})
+    (abstract-load-class classname))
+  [false "org/joda/time/tz/ZoneInfoProvider" "openResource" "(Ljava/lang/String;)Ljava/io/InputStream;"]
+  (fn [_ {:keys [constant? value]}]
+    (when constant?
+      (log-dep :resource (str "org/joda/time/tz/data/" value)))
+    UNDEFINED)
+  [false "java/lang/ClassLoader" "getResourceAsStream" "(Ljava/lang/String;)Ljava/io/InputStream;"]
+  (fn [_ {:keys [constant? value]}]
+    (when constant?
+      (log-dep :resource value))
+    UNDEFINED)
+  [true "com/amazonaws/util/ClassLoaderHelper" "getResourceAsStream" "(Ljava/lang/String;Z[Ljava/lang/Class;)Ljava/io/InputStream;"]
+  (fn [{:keys [constant? value]} _ _]
+    (when constant?
+      (log-dep :resource value))
+    UNDEFINED)
+  [true "com/amazonaws/util/ClassLoaderHelper" "getResource" "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/net/URL;"]
+  (fn [{:keys [constant? value]} _]
+    (when constant?
+      (log-dep :resource value))
+    UNDEFINED)})
 
 (defn invoke [is-static owner name desc args]
-  #_(prn is-static owner name desc)
+  #_(prn is-static owner name desc args)
   (if-some [f (dispatch [is-static owner name desc])]
     (apply f args)
     (new-value (.getReturnType (org.objectweb.asm.Type/getMethodType desc)))))

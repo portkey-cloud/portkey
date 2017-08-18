@@ -22,7 +22,8 @@
     (let [dir (temp-dir "portkey-test")]
       (.deleteOnExit dir)
       (loop []
-        (when-some [e (.getNextEntry zip)]
+        (when-some [e (some-> (.getNextEntry zip)
+                              (#(when-not (= "/" (.getName %)) %)))]
           (let [f (java.io.File. dir (.getName e))]
             (.deleteOnExit f)
             (if (.isDirectory e)
@@ -71,7 +72,7 @@
   ([f]
     (invoke f ""))
   ([f in-as-string]
-    (let [zip (java.io.File/createTempFile "portkey-core-test" "zip")]
+   (let [zip (java.io.File/createTempFile "portkey-core-test" "zip")]
       (.deleteOnExit zip)
       (apply pk/package! zip f *extras*)
       (println "ZIP size=" (.length zip))
@@ -190,14 +191,19 @@
                               (spit out))))))))))
 
 (deftest amazonica
-  (is (= "0"
-         (with-deps [[amazonica "0.3.108"]]
-           (require '[amazonica.aws.cloudwatch :as cw])
-           (binding [*extras* #{"com/amazonaws/internal/config/awssdk_config_default.json"
-                                com.amazonaws.internal.config.HostRegexToRegionMappingJsonHelper
-                                com.amazonaws.internal.config.HttpClientConfigJsonHelper}]
-             (invoke (fn [in out ctx]
-                       (spit out (-> (cw/list-metrics {:endpoint "eu-west-1"} :namespace "lol")
-                                   :metrics
-                                   count
-                                   str)))))))))
+  (let [tz (java.util.TimeZone/getDefault)]
+    (java.util.TimeZone/setDefault (java.util.TimeZone/getTimeZone "UTC"))
+    (try
+      (is (= "0"
+             (with-deps [[amazonica "0.3.108"]]
+               (require '[amazonica.aws.cloudwatch :as cw])
+               (binding [*extras* #{com.amazonaws.partitions.model.Region
+                                    com.amazonaws.internal.config.HostRegexToRegionMappingJsonHelper
+                                    com.amazonaws.internal.config.HttpClientConfigJsonHelper}]
+                 (invoke (fn [in out ctx]
+                           (spit out (-> (cw/list-metrics {:endpoint "eu-west-1"} :namespace "lol")
+                                         :metrics
+                                         count
+                                         str))))))))
+      (finally
+        (java.util.TimeZone/setDefault tz)))))

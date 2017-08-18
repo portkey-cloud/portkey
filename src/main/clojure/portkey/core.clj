@@ -99,7 +99,7 @@
         class))
     (class? x) x))
 
-(defn dep-logger [log! log-fake!]
+(defn dep-logger [log! log-fake! log-resource!]
   (fn [type x]
     (case type
       :var (log! x)
@@ -108,16 +108,18 @@
       :var-ref (log! (clojure.java.api.Clojure/var x))
       :fake (with-bindings {#_#_clojure.lang.Compiler/LOADER *classloader*}
               (load (str "/" x))
-              (log-fake! x)))))
+              (log-fake! x))
+      :resource (log-resource! x))))
 
 (defn bom
   "Computes the bill-of-materials for an object."
   ([root]
     (bom root default-whitelist))
   ([root whitelist?]
-    (let [deps (atom []) fakes (atom #{})]
+    (let [deps (atom []) fakes (atom #{}) resources (atom #{})]
       (binding [log-dep (dep-logger #(when-not (or (nil? %) (whitelist? %)) (swap! deps conj %))
-                          #(swap! fakes conj %))]
+                                    #(swap! fakes conj %)
+                                    #(swap! resources conj %))]
         (let [root-bytes (kryo/freeze root)]
           (loop [todo #{} vars {} classes #{}]
             (let [todo (into todo (comp (remove vars) (remove classes)) @deps)]
@@ -133,7 +135,7 @@
                       (inspect-class dep)
                       (recur todo vars (conj classes dep)))))
                 {:vars vars :classes classes :root root-bytes
-                 :fakes @fakes}))))))))
+                 :fakes @fakes :resources @resources}))))))))
 
 (defn bootstrap
   "Returns a serialized thunk (0-arg fn). This thunk when called returns deserialized root with all vars set."
@@ -210,8 +212,12 @@
           (< i 100) (recur (inc i))
           :else (throw (IllegalStateException. (str "Can't create tmp dir prefixed by " (pr-str base) " after " i " collisions."))))))))
 
-(defn- resource-url [path]
+(defn- get-resource [path]
   (.getResource (.getContextClassLoader (Thread/currentThread)) path))
+
+(defn- resource-url [path]
+  (some get-resource (cond-> [path]
+                       (.startsWith path "/") (conj (.substring path 1 (.length path))))))
 
 (def ^:private support-entries
   (-> support-deps
@@ -226,7 +232,11 @@
    package."
   [out f & keeps]
   (let [fbom (bom f)
-        resources (into {} (comp (filter string?) (map (fn [path] [path (resource-url path)]))) keeps)
+        resources (into {}
+                        (comp (filter string?)
+                              (map (fn [path] [path (resource-url path)]))
+                              (filter (fn [[path url]] url)))
+                        (concat keeps (:resources fbom)))
         keeps (remove string? keeps)
         bom (transduce (comp (map bom) (map #(dissoc % :root)))
               (partial merge-with into) fbom keeps)
