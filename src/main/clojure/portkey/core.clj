@@ -109,7 +109,7 @@
       :fake (with-bindings {#_#_clojure.lang.Compiler/LOADER *classloader*}
               (load (str "/" x))
               (log-fake! x))
-      :resource (log-resource! x))))
+      :resource (log-resource! (re-find #"[^/].*" x)))))
 
 (defn bom
   "Computes the bill-of-materials for an object."
@@ -212,12 +212,8 @@
           (< i 100) (recur (inc i))
           :else (throw (IllegalStateException. (str "Can't create tmp dir prefixed by " (pr-str base) " after " i " collisions."))))))))
 
-(defn- get-resource [path]
-  (.getResource (.getContextClassLoader (Thread/currentThread)) path))
-
 (defn- resource-url [path]
-  (some get-resource (cond-> [path]
-                       (.startsWith path "/") (conj (.substring path 1 (.length path))))))
+  (.getResource (.getContextClassLoader (Thread/currentThread)) path))
 
 (def ^:private support-entries
   (-> support-deps

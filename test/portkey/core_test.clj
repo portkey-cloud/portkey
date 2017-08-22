@@ -22,8 +22,7 @@
     (let [dir (temp-dir "portkey-test")]
       (.deleteOnExit dir)
       (loop []
-        (when-some [e (some-> (.getNextEntry zip)
-                              (#(when-not (= "/" (.getName %)) %)))]
+        (when-some [e (.getNextEntry zip)]
           (let [f (java.io.File. dir (.getName e))]
             (.deleteOnExit f)
             (if (.isDirectory e)
