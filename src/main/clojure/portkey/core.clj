@@ -250,28 +250,47 @@
     (= String class)
     (= Boolean class)))
 
-(defn- as-doto* [^Class class m]
-  (if (= java.util.Map class)
-    m
-    (let [setters (reduce (partial merge-with into) {}
+(defn- as-doto [^Class class & ops]
+  (let [parse (fn parse [ops]
+                (lazy-seq
+                  (when-some [[op & ops] (seq ops)]
+                    (if (keyword? op)
+                      (case op
+                        :when 
+                        (let [[_ test m & ops] ops]
+                          (cons [:when test m] (parse ops))))
+                      (cons [:set op] (parse ops))))))
+        ops (parse ops)
+        doto-form
+        (fn [m]
+          (let [setters (reduce (partial merge-with into) {}
                           (for [m (.getMethods class)
                                 :let [name (.getName m)
                                       params (.getParameterTypes m)]
                                 :when (.startsWith name "set")
                                 :when (= 1 (count params))]
                             {name #{(aget params 0)}}))
-          setter-call (fn [[k v]]
-                        (let [mname (str/replace (str "set-" (name k)) #"-(.)" (fn [[_ ^String c]] (.toUpperCase c)))
-                              types (setters mname)]
-                          (if (map? v)
-                            (let [types (remove atomic? types)]
-                              (case (count types)
-                                0 (throw (IllegalStateException. (str "No bean for method " mname " on class " class)))
-                                1 `(~(symbol (str "." mname)) ~(as-doto* (first types) v))
-                                (throw (IllegalStateException. (str "Too many overrides for method " mname " on class " class)))))
-                            `(~(symbol (str "." mname)) ~v))))]
-      `(doto (new ~(symbol (.getName class)))
-         ~@(map setter-call m)))))
+                setter-call (fn [[k v]]
+                              (let [mname (str/replace (str "set-" (name k)) #"-(.)" (fn [[_ ^String c]] (.toUpperCase c)))
+                                    types (setters mname)]
+                                (if (map? v)
+                                  (let [types (remove atomic? types)]
+                                    (case (count types)
+                                      0 (throw (IllegalStateException. (str "No bean for method " mname " on class " class)))
+                                      1 `(~(symbol (str "." mname)) ~(as-doto (first types) v))
+                                      (throw (IllegalStateException. (str "Too many overrides for method " mname " on class " class)))))
+                                  `(~(symbol (str "." mname)) ~v))))]
+            `(doto ~@(map setter-call m))))]
+    (if (= java.util.Map class)
+      `(-> {} ~@(for [[op a b] ops]
+                  (case op
+                    :set `(into ~a)
+                    :when `(cond-> ~a (into ~b)))))
+      `(-> (new ~(symbol (.getName class)))
+         ~@(for [[op a b] ops]
+             (case op
+               :set (doto-form a)
+               :when `(cond-> ~a ~(doto-form b))))))))
 
 (defn- aws-name-munge [name]
   (str/replace name #"(_)|(\.)|(/)|([^a-zA-Z0-9-_])"
@@ -291,8 +310,17 @@
         slash "/"
         :else (char (Long/parseLong other 16))))))
 
-(defmacro ^:private donew [class m]
-  (as-doto* (resolve class) m))
+(defmacro ^:private donew [class & ms]
+  (apply as-doto (resolve class) ms))
+
+(defmacro ^:private doset [x m]
+  (if-some [class (or
+                    (some-> x meta :tag resolve)
+                    (some-> m meta :tag resolve)
+                    (some-> &form meta :tag resolve))]
+    (as-doto class x m)
+    (throw (ex-info "No :tag meta on forms passed to doset."
+             {:forms [x m &form]}))))
 
 (def build
   (memoize
@@ -456,16 +484,17 @@
     (if-not (try-some (get-function lambda-function-name))
       (let [arn (-> (try-some (fetch-portkey-role)) (.getRole) (.getArn))
             client (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-            req (eval (as-doto* com.amazonaws.services.lambda.model.CreateFunctionRequest
-                                (cond-> {:function-name lambda-function-name
-                                         :handler "portkey.LambdaStub"
-                                         :code {:zip-file bb}
-                                         :role arn
-                                         :runtime "java8"
-                                         :memory-size (int 1536)
-                                         :timeout (int 30)
-                                         :environment {:variables environment-variables}}
-                                  vpc-config (assoc :vpc-config (parse-vpc-config vpc-config)))))]
+            req (donew com.amazonaws.services.lambda.model.CreateFunctionRequest
+                  {:function-name lambda-function-name
+                   :handler "portkey.LambdaStub"
+                   :code {:zip-file bb}
+                   :role arn
+                   :runtime "java8"
+                   :memory-size (int 1536)
+                   :timeout (int 30)
+                   :environment {:variables environment-variables}}
+                  :when vpc-config
+                  {:vpc-config (parse-vpc-config vpc-config)})]
         (let [{:keys [exception result]}
               (reduce (fn [acc sleep-time]
                         (try
@@ -487,10 +516,12 @@
                                                  :zip-file bb}))
                     (.getFunctionArn))]
         (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-            (.updateFunctionConfiguration (eval (as-doto* com.amazonaws.services.lambda.model.UpdateFunctionConfigurationRequest
-                                                          (cond-> {:function-name lambda-function-name
-                                                                   :environment {:variables environment-variables}}
-                                                            vpc-config (assoc :vpc-config (parse-vpc-config vpc-config)))))))
+            (.updateFunctionConfiguration
+              (donew com.amazonaws.services.lambda.model.UpdateFunctionConfigurationRequest
+                {:function-name lambda-function-name
+                 :environment {:variables environment-variables}}
+                :when vpc-config
+                {:vpc-config (parse-vpc-config vpc-config)})))
         arn))))
 
 (defn parse-path [template argnames]
