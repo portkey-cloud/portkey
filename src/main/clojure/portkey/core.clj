@@ -64,23 +64,30 @@
     (identical? cl (.getClassLoader Class)) ; in case a JVM does not return null for boostrap
     true))
 
-(def clojure-java-ns
-  ["java\\.api"
-   "java\\.browse"
-   "java\\.io"
-   "java\\.javadoc"
-   "java\\.shell"])
+(def whitelist-nses
+  '#{clojure.core
+     clojure.walk
+     clojure.zip
+     clojure.java.api
+     clojure.java.browse
+     clojure.java.io
+     clojure.java.javadoc
+     clojure.java.shell
+     portkey.logdep portkey.kryo portkey.ouroboros carbonite.serializer})
 
 (def white-list-pattern
-  (re-pattern (str "(?:clojure\\.(?:lang\\.|walk\\.|"
-                   (clojure.string/join "|" clojure-java-ns)
-                   "|core[\\$.])|com\\.esotericsoftware\\.kryo\\.).*")))
+  (re-pattern
+    (str "(?:clojure\\.lang\\.|"
+      (clojure.string/join "|"
+        (map #(str (java.util.regex.Pattern/quote (name %)) "[$.]")
+          whitelist-nses))
+      "|com\\.esotericsoftware\\.kryo\\.).*")))
 
 (def default-whitelist
   #(if (var? %)
-     (some-> % meta :ns ns-name #{'clojure.core 'portkey.logdep 'portkey.kryo 'portkey.ouroboros 'carbonite.serializer})
+     (some-> % meta :ns ns-name whitelist-nses)
      (or (bootstrap-class? %)
-         (re-matches white-list-pattern (.getName ^Class %)))))
+       (re-matches white-list-pattern (.getName ^Class %)))))
 
 (def primitive? #{"void" "int" "byte" "short" "long" "char" "boolean" "float" "double"})
 
