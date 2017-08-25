@@ -124,31 +124,35 @@
     (bom root default-whitelist))
   ([root whitelist?]
     (let [deps (atom []) fakes (atom #{}) resources (atom #{})]
-      (binding [log-dep (dep-logger #(when-not (or (nil? %) (whitelist? %)) (swap! deps conj %))
+      (binding [log-dep (dep-logger #(some->> % (swap! deps conj))
                                     #(swap! fakes conj %)
                                     #(swap! resources conj %))]
         (let [root-bytes (kryo/freeze root)]
-          (loop [todo #{} vars {} classes #{}]
+          (loop [todo #{} vars {} classes #{} requires #{}]
             (let [todo (into todo (comp (remove vars) (remove classes)) @deps)]
               (reset! deps [])
               (if-some [dep (first todo)]
                 (let [todo (disj todo dep)]
                   (cond
+                    (whitelist? dep)
+                    (recur todo vars classes (cond-> requires (var? dep) (conj (-> dep meta :ns ns-name))))
                     (var? dep)
                     (let [bytes (kryo/freeze [(:dynamic (meta dep)) @dep])]
-                      (recur todo (assoc vars dep bytes) classes))
+                      (recur todo (assoc vars dep bytes) classes requires))
                     (class? dep)
                     (do
                       (inspect-class dep)
-                      (recur todo vars (conj classes dep)))))
+                      (recur todo vars (conj classes dep) requires))))
                 {:vars vars :classes classes :root root-bytes
-                 :fakes @fakes :resources @resources}))))))))
+                 :fakes @fakes :resources @resources
+                 :requires requires}))))))))
 
 (defn bootstrap
   "Returns a serialized thunk (0-arg fn). This thunk when called returns deserialized root with all vars set."
-  [{:keys [root vars classes fakes]}]
+  [{:keys [root vars classes fakes requires]}]
   (let [bom' (bom
                (fn []
+                 (apply require requires)
                  (doseq [[^clojure.lang.Var v bs] vars]
                    (let [[d root] (kryo/unfreeze bs)]
                      (.bindRoot v root)
