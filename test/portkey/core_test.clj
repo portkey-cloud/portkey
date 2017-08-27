@@ -190,19 +190,26 @@
                               (spit out))))))))))
 
 (deftest amazonica
-  (let [tz (java.util.TimeZone/getDefault)]
+  (let [tz (java.util.TimeZone/getDefault)
+        user-timezone (System/getProperty "user.timezone")]
     (java.util.TimeZone/setDefault (java.util.TimeZone/getTimeZone "UTC"))
+    (System/setProperty "user.timezone" "UTC")
     (try
       (is (= "0"
              (with-deps [[amazonica "0.3.108"]]
                (require '[amazonica.aws.cloudwatch :as cw])
                (binding [*extras* #{com.amazonaws.partitions.model.Region
                                     com.amazonaws.internal.config.HostRegexToRegionMappingJsonHelper
-                                    com.amazonaws.internal.config.HttpClientConfigJsonHelper}]
+                                    com.amazonaws.internal.config.HttpClientConfigJsonHelper
+                                    "org/joda/time/tz/data/Etc/UTC"}]
                  (invoke (fn [in out ctx]
-                           (spit out (-> (cw/list-metrics {:endpoint "eu-west-1"} :namespace "lol")
-                                         :metrics
-                                         count
-                                         str))))))))
+                           (try
+                             (spit out (-> (cw/list-metrics {:endpoint "eu-west-1"} :namespace "lol")
+                                           :metrics
+                                           count
+                                           str))
+                             (catch Throwable t
+                               (spit out "error")))))))))
       (finally
-        (java.util.TimeZone/setDefault tz)))))
+        (java.util.TimeZone/setDefault tz)
+        (System/setProperty "user.timezone" user-timezone)))))
