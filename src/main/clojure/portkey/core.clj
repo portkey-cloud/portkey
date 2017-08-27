@@ -31,7 +31,7 @@
 
 (defn bytecode [class]
   (or
-    (some-> (.getClassLoader class) (.getResource (resource-name class)) get-bytes)
+     (some-> (.getClassLoader class) (.getResource (resource-name class)) get-bytes)
     (get (ou/bytecode [class]) class)
     (throw (ex-info "Can't find" {:class class}))))
 
@@ -83,7 +83,9 @@
       (clojure.string/join "|"
         (map #(str (java.util.regex.Pattern/quote (name %)) "[$.]")
           whitelist-nses))
-      "|com\\.esotericsoftware\\.kryo\\.).*")))
+      "|com\\.esotericsoftware\\.kryo\\."
+      "|com\\.sun\\.tools\\."
+      ").*")))
 
 (def default-whitelist
   #(if (var? %)
