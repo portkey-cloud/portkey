@@ -73,6 +73,8 @@
      clojure.java.io
      clojure.java.javadoc
      clojure.java.shell
+     clojure.pprint
+     clojure.string
      portkey.logdep portkey.kryo portkey.ouroboros carbonite.serializer})
 
 (def white-list-pattern
