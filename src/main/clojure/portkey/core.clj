@@ -110,46 +110,53 @@
         class))
     (class? x) x))
 
-(defn dep-logger [log! log-fake! log-resource!]
+(defn dep-logger [log!]
   (fn [type x]
     (case type
-      :var (log! x)
-      :class (log! (ensure-class x))
-      :root-class (run! log! (ou/descendants (ensure-class x)))
-      :var-ref (log! (clojure.java.api.Clojure/var x))
+      :var (log! :vars x)
+      :class (some->> x ensure-class (log! :classes))
+      :root-class (some->> x ensure-class ou/descendants (run! #(log! :classes %)))
+      :var-ref (log! :vars (clojure.java.api.Clojure/var x))
       :fake (with-bindings {#_#_clojure.lang.Compiler/LOADER *classloader*}
               (load (str "/" x))
-              (log-fake! x))
-      :resource (log-resource! (re-find #"[^/].*" x)))))
+              (log! :fakes x))
+      :resource (log! :resources (re-find #"[^/].*" x)))))
+
+(defn- deref-and-set! [a x]
+  (loop []
+    (let [x' @a]
+      (if (compare-and-set! a x' x)
+        x'
+        (recur)))))
 
 (defn bom
   "Computes the bill-of-materials for an object."
   ([root]
     (bom root default-whitelist))
   ([root whitelist?]
-    (let [deps (atom []) fakes (atom #{}) resources (atom #{})]
-      (binding [log-dep (dep-logger #(some->> % (swap! deps conj))
-                                    #(swap! fakes conj %)
-                                    #(swap! resources conj %))]
-        (let [root-bytes (kryo/freeze root)]
-          (loop [todo #{} vars {} classes #{} requires #{}]
-            (let [todo (into todo (comp (remove vars) (remove classes)) @deps)]
-              (reset! deps [])
-              (if-some [dep (first todo)]
-                (let [todo (disj todo dep)]
-                  (cond
-                    (whitelist? dep)
-                    (recur todo vars classes (cond-> requires (var? dep) (conj (-> dep meta :ns ns-name))))
-                    (var? dep)
-                    (let [bytes (kryo/freeze [(:dynamic (meta dep)) @dep])]
-                      (recur todo (assoc vars dep bytes) classes requires))
-                    (class? dep)
-                    (do
-                      (inspect-class dep)
-                      (recur todo vars (conj classes dep) requires))))
-                {:vars vars :classes classes :root root-bytes
-                 :fakes @fakes :resources @resources
-                 :requires requires}))))))))
+    (let [empty-deps {:fakes #{} :classes #{} :vars #{} :resources #{}}
+          deps (atom empty-deps)
+          empty-bom {:fakes #{} :classes #{} :vars {} :resources #{} :requires #{}}]
+      (binding [log-dep (dep-logger #(swap! deps update %1 conj %2))]
+        (loop [bom {:root (kryo/freeze root)
+                    :fakes #{} :classes #{} :vars {} :resources #{} :requires #{}}]
+          (let [{:keys [fakes classes vars resources] :as new-deps} (deref-and-set! deps empty-deps)]
+            (prn new-deps)
+            (if (identical? new-deps empty-deps)
+              bom
+              (-> bom
+                (update :requires into (comp (filter whitelist?) (map #(-> % meta :ns ns-name))) vars)
+                (update :classes into (comp
+                                        (remove whitelist?)
+                                        (remove (:classes bom))
+                                        (map #(doto % inspect-class))) classes)
+                (update :resources into resources)
+                (update :fakes into fakes)
+                (update :vars into (comp (filter whitelist?) (remove (:vars bom))
+                                     (map (fn [v]
+                                            [v (kryo/freeze [(:dynamic (meta v)) @v])])))
+                  vars)
+                recur))))))))
 
 (defn bootstrap
   "Returns a serialized thunk (0-arg fn). This thunk when called returns deserialized root with all vars set."
