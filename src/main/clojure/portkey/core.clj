@@ -35,9 +35,12 @@
     (get (ou/bytecode [class]) class)
     (throw (ex-info "Can't find" {:class class}))))
 
+(def ^:private ^:dynamic *source*)
+
 (defn inspect-class [^Class class]
   (try
-    (binding [*classloader* (.getClassLoader class)]
+    (binding [*classloader* (.getClassLoader class)
+              *source* class]
       (let [log-classname #(log-dep :class %)
             bytes (bytecode class)
             rdr (org.objectweb.asm.ClassReader. bytes)
@@ -129,6 +132,17 @@
         x'
         (recur)))))
 
+(def ^:dynamic *debug-deps*)
+
+(defn ^:private edge! [k to]
+  (when (bound? #'*debug-deps*)
+    (set! *debug-deps* (update *debug-deps* to (fnil conj #{}) *source*))))
+
+(defmacro debug-deps [& body]
+  `(binding [*debug-deps* {}]
+     ~@body
+     *debug-deps*))
+
 (defn bom
   "Computes the bill-of-materials for an object."
   ([root]
@@ -137,8 +151,10 @@
     (let [empty-deps {:fakes #{} :classes #{} :vars #{} :resources #{}}
           deps (atom empty-deps)
           empty-bom {:fakes #{} :classes #{} :vars {} :resources #{} :requires #{}}]
-      (binding [log-dep (dep-logger #(swap! deps update %1 conj %2))]
-        (loop [bom {:root (kryo/freeze root)
+      (binding [log-dep (dep-logger #(do
+                                       (edge! %1 %2)
+                                       (swap! deps update %1 conj %2)))]
+        (loop [bom {:root (binding [*source* :root] (kryo/freeze root))
                     :fakes #{} :classes #{} :vars {} :resources #{} :requires #{}}]
           (let [{:keys [fakes classes vars resources] :as new-deps} (deref-and-set! deps empty-deps)]
             (if (identical? new-deps empty-deps)
@@ -153,7 +169,8 @@
                 (update :fakes into fakes)
                 (update :vars into (comp (filter whitelist?) (remove (:vars bom))
                                      (map (fn [v]
-                                            [v (kryo/freeze [(:dynamic (meta v)) @v])])))
+                                            [v (binding [*source* v]
+                                                 (kryo/freeze [(:dynamic (meta v)) @v]))])))
                   vars)
                 recur))))))))
 
