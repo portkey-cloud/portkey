@@ -141,7 +141,6 @@
         (loop [bom {:root (kryo/freeze root)
                     :fakes #{} :classes #{} :vars {} :resources #{} :requires #{}}]
           (let [{:keys [fakes classes vars resources] :as new-deps} (deref-and-set! deps empty-deps)]
-            (prn new-deps)
             (if (identical? new-deps empty-deps)
               bom
               (-> bom
