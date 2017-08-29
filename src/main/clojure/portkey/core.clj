@@ -167,7 +167,7 @@
                                         (map #(doto % inspect-class))) classes)
                 (update :resources into resources)
                 (update :fakes into fakes)
-                (update :vars into (comp (filter whitelist?) (remove (:vars bom))
+                (update :vars into (comp (remove whitelist?) (remove (:vars bom))
                                      (map (fn [v]
                                             [v (binding [*source* v]
                                                  (kryo/freeze [(:dynamic (meta v)) @v]))])))
