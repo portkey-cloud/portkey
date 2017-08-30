@@ -463,7 +463,7 @@
                                                      "/*/*/*")})))
         id))))
 
-(defn deploy-api [id stage]
+(defn deploy-api! [id stage]
   (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
       (.createDeployment (donew com.amazonaws.services.apigateway.model.CreateDeploymentRequest
                                 {:stage-name stage
@@ -584,17 +584,16 @@
      :query-args (vals query-arg-params)
      :arg-paths arg-paths}))
 
-(defn mount [var-f path & {:keys [keeps content-type environment-variables vpc-config]
-                           :or {content-type "application/json"}}]
-  (let [arg-names (-> var-f meta :arglists first)
-        f @var-f
-        {:as parsed-path :keys [arg-paths]} (parse-path path arg-names)
+(defn mount-fn [f path {:keys [keeps content-type environment-variables vpc-config
+                               arg-names lambda-function-name api-function-name
+                               stage]
+                        :or {content-type "application/json"
+                             stage "repl"}}]
+  (let [{:as parsed-path :keys [arg-paths]} (parse-path path arg-names)
         wrap (fn [in out ctx]
                (let [{:as method-request :strs [params]} (-> in slurp json/parse-string)
                      args (map #(get-in params %) arg-paths)]
                  (spit out (apply f args))))
-        lambda-function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
-        api-function-name (-> var-f meta :name name)
         arn (deploy! wrap lambda-function-name
                      :keeps keeps
                      :environment-variables environment-variables
@@ -602,10 +601,22 @@
         {:keys [region]} (aws/parse-arn arn)
         id (ensure-api lambda-function-name
                        api-function-name
-                       (assoc parsed-path :content-type content-type))
-        stage "repl"]
-    (deploy-api id stage)
+                       (assoc parsed-path :content-type content-type))]
+    (deploy-api! id stage)
     {:url (str "https://" id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
+
+(defmacro mount! [f & {:as opts}]
+  (if-some [var-f (cond 
+                    (and (symbol? f) (not (contains? &env f)))
+                    (list 'var f)
+                    (and (seq? f) (= 'var (first f))) f)]
+    `(mount-fn @~var-f
+       ~(into {:arg-names `(-> ~var-f meta :arglists first)
+               :lambda-function-name `(as-> (meta ~var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
+               :api-function-name `(-> ~var-f meta :name name)
+               :stage "repl"}
+          opts))
+    `(mount-fn ~f ~opts)))
 
 (defn invoke [var-f]
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
