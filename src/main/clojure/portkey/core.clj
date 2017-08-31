@@ -605,7 +605,7 @@
     (deploy-api! id stage)
     {:url (str "https://" id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
 
-(defmacro mount! [f & {:as opts}]
+(defmacro mount! [f path & {:as opts}]
   (if-some [var-f (cond 
                     (and (symbol? f) (not (contains? &env f)))
                     (list 'var f)
@@ -616,7 +616,7 @@
                :api-function-name `(-> ~var-f meta :name name)
                :stage "repl"}
           opts))
-    `(mount-fn ~f ~opts)))
+    `(mount-fn ~f ~path ~opts)))
 
 (defn invoke [var-f]
   (.invoke (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
