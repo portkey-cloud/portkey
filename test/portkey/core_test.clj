@@ -209,7 +209,7 @@
                                            count
                                            str))
                              (catch Throwable t
-                               (spit out "error")))))))))
+                               (spit out (.getMessage t))))))))))
       (finally
         (java.util.TimeZone/setDefault tz)
         (System/setProperty "user.timezone" user-timezone)))))
