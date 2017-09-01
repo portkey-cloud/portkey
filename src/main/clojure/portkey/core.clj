@@ -193,12 +193,37 @@
       (update :classes into classes)
       (assoc :fakes fakes))))
 
-(defn zip! 
+(defn counting-output-stream
+  "listener is a function with two arities
+- 0 arg -> out is closed
+- 1 arg -> number of bytes written"
+  [^java.io.OutputStream out listener]
+  (proxy [java.io.OutputStream] []
+    (close [] (listener) (.close out))
+    (flush [] (.flush out))
+    (write
+      ([byte-or-bytes]
+        (if (bytes? byte-or-bytes)
+          (do (listener (alength ^bytes byte-or-bytes))
+            (.write out ^bytes byte-or-bytes))
+          (do (listener 1)
+            (.write out ^int byte-or-bytes))))
+      ([bytes off len]
+        (listener len)
+        (.write out bytes off len)))))
+
+(defn zip!
   "Writes a zip to out."
   [out entries]
-  (let [entries-map (into (sorted-map) entries)]
+  (let [entries-map (into (sorted-map) entries)
+        byte-count (atom 0)
+        listener (fn
+                   ([]
+                    (println (format "Zip size %.1fMB" (/ @byte-count 1048576.0))))
+                   ([len]
+                    (swap! byte-count + len)))]
     (with-open [out (io/output-stream out)
-                zip (java.util.zip.ZipOutputStream. out)]
+                zip (java.util.zip.ZipOutputStream. (counting-output-stream out listener))]
       (letfn [(^String emit-dirs [^String dir ^String path]
                 (if-not (.startsWith path dir)
                   (recur (subs dir 0 (inc (.lastIndexOf dir "/" (- (count dir) 2)))) path)
