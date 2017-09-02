@@ -635,16 +635,15 @@
                     (and (symbol? f) (not (contains? &env f)))
                     (list 'var f)
                     (and (seq? f) (= 'var (first f))) f)]
-    `(let [var# ~var-f
-           mnt!# (fn []
-                   (mount-fn @var# ~path
-                     ~(into {:arg-names `(-> var# meta :arglists first)
-                             :lambda-function-name `(as-> (meta var#) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
-                             :api-function-name `(-> var# meta :name name)
+    `(let [mnt!# (fn []
+                   (mount-fn @~var-f ~path
+                     ~(into {:arg-names `(-> ~var-f meta :arglists first)
+                             :lambda-function-name `(as-> (meta ~var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
+                             :api-function-name `(-> ~var-f meta :name name)
                              :stage "repl"}
                         opts)))]
        (when ~live
-         (add-watch @var# 
+         (add-watch @~var-f 
            :portkey/watch (fn [_# _# _# _#] (mnt!#))))
        (mnt!#))
     `(mount-fn ~f ~path ~opts)))
