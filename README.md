@@ -18,7 +18,7 @@ Live at the repl:
 (defn flatter [name]
   (str name " is " (rand-nth ["incredible" "awesome" "fantastic"])))
 
-(pk/mount flatter "/hello?name={name}")
+(pk/mount! flatter "/hello?name={name}")
 => {:url "https://api-id.execute-api.region.amazonaws.com/hello"}
 ```
 
