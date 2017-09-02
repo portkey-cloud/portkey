@@ -643,7 +643,7 @@
                              :stage "repl"}
                         opts)))]
        (when ~live
-         (add-watch @~var-f 
+         (add-watch ~var-f 
            :portkey/watch (fn [_# _# _# _#] (mnt!#))))
        (mnt!#))
     `(mount-fn ~f ~path ~opts)))
