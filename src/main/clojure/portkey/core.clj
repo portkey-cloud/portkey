@@ -388,7 +388,7 @@
 (def build
   (memoize
    (fn [cls]
-     (let [client (eval (list (symbol (.getCanonicalName cls) "defaultClient")))]
+     (let [client (-> cls (.getMethod "defaultClient" (into-array Class nil)) (.invoke nil (object-array 0)))]
        (-> (Runtime/getRuntime)
            (.addShutdownHook (Thread. #(.shutdown client))))
        client))))
