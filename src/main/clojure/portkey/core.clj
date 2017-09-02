@@ -612,7 +612,7 @@
 (defn mount-fn [f path {:keys [keeps content-type environment-variables vpc-config
                                arg-names lambda-function-name api-function-name
                                stage]
-                        :or {content-type "application/json"
+                        :or {content-type "text/plain"
                              stage "repl"}}]
   (let [{:as parsed-path :keys [arg-paths]} (parse-path path arg-names)
         wrap (fn [in out ctx]
