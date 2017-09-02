@@ -587,11 +587,23 @@
                 {:vpc-config (parse-vpc-config vpc-config)})))
         arn))))
 
-(defn parse-path [template argnames]
+(defn parse-path
+  "Parses a subset of URITemplates.
+The `template` argument is the uri template as a string,
+and `argnames` a collection of argument names as symbols."
+  [template argnames]
   (let [[_ path query] (re-matches #"(.*?)(\?.*)?" template)
         path-args (into #{} (map second) (re-seq #"\{([^}]*)}" path))
         query-arg-params (into {}
                            (when query (for [[_ param arg] (re-seq #"[&?](\w*)=\{(\w*)}" query)] [arg param])))
+        max-anon-arg
+        (transduce (keep (fn [arg]
+                           (when-some [[_ n] (re-matches #"%(\d*)" arg)]
+                             (case n
+                               "" 1
+                               (Long/parseLong n)))))
+          max 0 (concat (keys query-arg-params) path-args))
+        argnames (doto (concat argnames (map #(str "%" (inc %)) (range (count argnames) max-anon-arg))) prn)
         arg-paths (into []
                     (comp (map name)
                       (map-indexed (fn [i ^String arg]
@@ -600,8 +612,8 @@
                                        (if-some [param (query-arg-params arg)]
                                          ["querystring" param]
                                          (cond
-                                           (not (.startsWith arg "%")) (recur i (str "%" i))
-                                           (= "%0" arg) (recur i "%")
+                                           (not (.startsWith arg "%")) (recur i (str "%" (inc i)))
+                                           (= "%1" arg) (recur i "%")
                                            :else (throw (ex-info (str "Unmapped argument: " (nth argnames i)) {:template template :argnames argnames}))))))))
                     argnames)]
     {:path path
