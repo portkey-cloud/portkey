@@ -638,7 +638,7 @@
     `(let [mnt!# (fn []
                    (mount-fn @~var-f ~path
                      ~(into {:arg-names `(-> ~var-f meta :arglists first)
-                             :lambda-function-name `(as-> (meta ~var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
+                             :lambda-function-name `(as-> (meta ~var-f) x# (str (:ns x#) "/" (:name x#)) (aws-name-munge x#))
                              :api-function-name `(-> ~var-f meta :name name)
                              :stage "repl"}
                         opts)))]
