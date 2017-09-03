@@ -2,6 +2,8 @@
 
 Live-coding the Cloud!
 
+[![CircleCI](https://circleci.com/gh/portkey-cloud/portkey/tree/master.svg?style=shield)](https://circleci.com/gh/portkey-cloud/portkey/tree/master)
+
 Portkey allows, at the REPL, to expose any function as an AWS Lambda.
 
 > Almost any inanimate object can be turned into a Portkey. Once bewitched, the object will transport anyone who grasps it to a pre-arranged destination.
