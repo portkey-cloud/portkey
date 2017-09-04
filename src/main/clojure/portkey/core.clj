@@ -598,7 +598,7 @@ and `argnames` a collection of argument names as symbols."
   (let [[_ path query] (re-matches #"(.*?)(\?.*)?" template)
         path-args (into #{} (map second) (re-seq #"\{([^}]*)}" path))
         query-arg-params (into {}
-                           (when query (for [[_ param arg] (re-seq #"[&?](\w*)=\{(\w*)}" query)] [arg param])))
+                           (when query (for [[_ param arg] (re-seq #"[&?]([a-zA-Z0-9-_]*)=\{([^}]*)}" query)] [arg param])))
         max-anon-arg
         (transduce (keep (fn [arg]
                            (when-some [[_ n] (re-matches #"%(\d*)" arg)]
@@ -606,7 +606,7 @@ and `argnames` a collection of argument names as symbols."
                                "" 1
                                (Long/parseLong n)))))
           max 0 (concat (keys query-arg-params) path-args))
-        argnames (doto (concat argnames (map #(str "%" (inc %)) (range (count argnames) max-anon-arg))) prn)
+        argnames (concat argnames (map #(str "%" (inc %)) (range (count argnames) max-anon-arg)))
         arg-paths (into []
                     (comp (map name)
                       (map-indexed (fn [i ^String arg]
