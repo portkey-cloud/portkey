@@ -69,6 +69,9 @@
 
 (def whitelist-nses
   '#{clojure.core
+     clojure.core.server
+     clojure.core.protocols
+     clojure.core.reducers
      clojure.walk
      clojure.zip
      clojure.java.api
@@ -84,7 +87,7 @@
   (re-pattern
     (str "(?:clojure\\.lang\\.|"
       (clojure.string/join "|"
-        (map #(str (java.util.regex.Pattern/quote (name %)) "[$.]")
+        (map #(str (java.util.regex.Pattern/quote (name %)) "(?:\\$|[^.]+$)") ; ns$xx for fns, ns.XX for types
           whitelist-nses))
       "|com\\.esotericsoftware\\.kryo\\."
       "|com\\.sun\\.tools\\."
