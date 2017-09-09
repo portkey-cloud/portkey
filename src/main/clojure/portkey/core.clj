@@ -431,7 +431,7 @@
          (.getFunction (donew com.amazonaws.services.lambda.model.GetFunctionRequest
                               {:function-name function-name}))))))
 
-(defn ensure-api [lambda-function-name api-function-name parsed-path]
+(defn ensure-api [lambda-function-name api-function-name parsed-path opts]
   (let [function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
                                    (.getFunctionConfiguration (donew com.amazonaws.services.lambda.model.GetFunctionConfigurationRequest
                                                                      {:function-name lambda-function-name})))
@@ -444,9 +444,10 @@
         (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
             (.putRestApi (donew com.amazonaws.services.apigateway.model.PutRestApiRequest
                                 {:rest-api-id id
-                                 :body (-> (aws/swagger-doc api-function-name
-                                                            (.getFunctionArn function-configuration)
-                                                            parsed-path)
+                                 :body (-> (aws/swagger api-function-name
+                                                        (.getFunctionArn function-configuration)
+                                                        parsed-path
+                                                        opts)
                                            cheshire.core/generate-string
                                            (.getBytes "UTF-8")
                                            java.nio.ByteBuffer/wrap)
@@ -468,9 +469,10 @@
         id)
       (let [id (-> (build com.amazonaws.services.apigateway.AmazonApiGatewayClientBuilder)
                    (.importRestApi (donew com.amazonaws.services.apigateway.model.ImportRestApiRequest
-                                          {:body (-> (aws/swagger-doc api-function-name
-                                                                      (.getFunctionArn function-configuration)
-                                                                      parsed-path)
+                                          {:body (-> (aws/swagger api-function-name
+                                                                  (.getFunctionArn function-configuration)
+                                                                  parsed-path
+                                                                  opts)
                                                      cheshire.core/generate-string
                                                      (.getBytes "UTF-8")
                                                      java.nio.ByteBuffer/wrap)
@@ -626,14 +628,22 @@ and `argnames` a collection of argument names as symbols."
 
 (defn mount-fn [f path {:keys [keeps content-type environment-variables vpc-config
                                arg-names lambda-function-name api-function-name
-                               stage]
+                               stage method]
                         :or {content-type "text/plain"
-                             stage "repl"}}]
-  (let [{:as parsed-path :keys [arg-paths]} (parse-path path arg-names)
+                             stage "repl"
+                             method :get}}]
+  (let [{:as parsed-path :keys [arg-paths]} (if (= method :get)
+                                              (parse-path path arg-names)
+                                              {:path path})
         wrap (fn [in out ctx]
-               (let [{:as method-request :strs [params]} (-> in slurp json/parse-string)
-                     args (map #(get-in params %) arg-paths)]
-                 (spit out (apply f args))))
+               (let [method-request (-> in slurp (json/parse-string true))]
+                 (if (= method :get)
+                   (let [{:keys [params]} method-request
+                         args (map #(get-in params %) arg-paths)]
+                     (spit out (apply f args)))
+                   (spit out (json/generate-string {:isBase64Encoded false
+                                                    :statusCode 200
+                                                    :body (f (-> method-request :body (json/parse-string true)))})))))
         arn (deploy! wrap lambda-function-name
                      :keeps keeps
                      :environment-variables environment-variables
@@ -641,7 +651,9 @@ and `argnames` a collection of argument names as symbols."
         {:keys [region]} (aws/parse-arn arn)
         id (ensure-api lambda-function-name
                        api-function-name
-                       (assoc parsed-path :content-type content-type))]
+                       parsed-path
+                       {:content-type content-type
+                        :method method})]
     (deploy-api! id stage)
     {:url (str "https://" id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
 
