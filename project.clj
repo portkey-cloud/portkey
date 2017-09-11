@@ -5,10 +5,11 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.ow2.asm/asm "5.2"]
                  [org.ow2.asm/asm-analysis "5.2"]
-                 [org.clojure/clojure "1.9.0-alpha15"]
+                 [org.clojure/clojure "1.9.0-alpha19"]
                  [com.esotericsoftware/kryo "4.0.0"]
                  [com.twitter/carbonite "1.4.0"
                  :exclusions [com.esotericsoftware.kryo/kryo]]
+                 [portkey/aws-clj-sdk "0.1.0-SNAPSHOT"]
                  [com.amazonaws/aws-java-sdk "1.11.166"]
                  [com.amazonaws/aws-lambda-java-core "1.1.0"]
                  [com.cemerick/pomegranate "0.3.1"]
