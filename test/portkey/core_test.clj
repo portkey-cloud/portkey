@@ -153,10 +153,12 @@
 
 (deftest parse-path
   (is (= (pk/parse-path "/sum?x={x}&y={y}" ['x 'y])
-         {:path "/sum"
-          :path-args #{}
-          :query-args '("x" "y")
-          :arg-paths [["querystring" "x"] ["querystring" "y"]]})))
+        {:path "/sum"
+         :path-args #{}
+         :query-args '("x" "y")
+         :arg-paths [["querystring" "x"] ["querystring" "y"]]}))
+  (is (= (pk/parse-path  "/answer?poll={poll-id}&option={option-id}" '[poll-id option-id])
+        '{:path "/answer", :path-args #{}, :query-args ("poll" "option"), :arg-paths [["querystring" "poll"] ["querystring" "option"]]})))
 
 (defmacro with-db [& body]
   `(with-open [pg# (-> (EmbeddedPostgres/builder)
@@ -214,6 +216,3 @@
         (java.util.TimeZone/setDefault tz)
         (System/setProperty "user.timezone" user-timezone)))))
 
-(deftest parse-path
-  (is (= (parse-path  "/answer?poll={poll-id}&option={option-id}" '[poll-id option-id])
-        '{:path "/answer", :path-args #{}, :query-args ("poll" "option"), :arg-paths [["querystring" "poll"] ["querystring" "option"]]})))
