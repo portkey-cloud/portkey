@@ -12,7 +12,7 @@ Portkey allows, at the REPL, to expose any function as an AWS Lambda.
 
 ([source](https://www.pottermore.com/writing-by-jk-rowling/portkeys))
 
-## Objective
+## Example
 
 Live at the repl:
 
@@ -24,7 +24,11 @@ Live at the repl:
 => {:url "https://api-id.execute-api.region.amazonaws.com/hello"}
 ```
 
-go to "https://api-id.execute-api.region.amazonaws.com/hello?name=Rich"
+Go to "https://api-id.execute-api.region.amazonaws.com/hello?name=Rich" (and wait for the instance to start).
+
+## Usage
+
+Add `[portkey "0.1.0-alpha"]` to your project file.
 
 spec could be leveraged so that a s/fdef would automatically turn validation on the api
 
