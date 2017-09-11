@@ -76,6 +76,11 @@
     (if (and (:constant? ns) (:constant? name))
       (do (log-dep :var-ref (symbol (:value ns) (:value name))) A_VAR) ; could even be made constant
       (throw (ex-info "Can't statically resolve var lookup" {:ns ns :name name}))))
+  [false "java/lang/ClassLoader" "getResourceAsStream" "(Ljava/lang/String;)Ljava/io/InputStream;"]
+  (fn [_ {:keys [constant? value]}]
+    (when constant?
+      (log-dep :resource value))
+    UNDEFINED)
   ;; the amount of adhoc interpretations should be minimized
   [true "org/apache/hadoop/util/ReflectionUtils" "newInstance"
    "(Ljava/lang/Class;Lorg/apache/hadoop/conf/Configuration;)Ljava/lang/Object;"]
@@ -91,11 +96,6 @@
   (fn [_ {:keys [constant? value]}]
     (when constant?
       (log-dep :resource (str "org/joda/time/tz/data/" value)))
-    UNDEFINED)
-  [false "java/lang/ClassLoader" "getResourceAsStream" "(Ljava/lang/String;)Ljava/io/InputStream;"]
-  (fn [_ {:keys [constant? value]}]
-    (when constant?
-      (log-dep :resource value))
     UNDEFINED)
   [true "com/amazonaws/util/ClassLoaderHelper" "getResourceAsStream" "(Ljava/lang/String;Z[Ljava/lang/Class;)Ljava/io/InputStream;"]
   (fn [{:keys [constant? value]} _ _]
