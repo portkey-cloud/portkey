@@ -213,3 +213,7 @@
       (finally
         (java.util.TimeZone/setDefault tz)
         (System/setProperty "user.timezone" user-timezone)))))
+
+(deftest parse-path
+  (is (= (parse-path  "/answer?poll={poll-id}&option={option-id}" '[poll-id option-id])
+        '{:path "/answer", :path-args #{}, :query-args ("poll" "option"), :arg-paths [["querystring" "poll"] ["querystring" "option"]]})))
