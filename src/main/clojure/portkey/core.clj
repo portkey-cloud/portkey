@@ -7,7 +7,7 @@
     [clojure.string :as str]
     [cheshire.core :as json]
     [portkey.logdep :refer [log-dep]]
-    [portkey.aws :as aws]))
+    [portkey.aws-helpers :as aws]))
 
 (def ^:dynamic ^ClassLoader *classloader* nil)
 
