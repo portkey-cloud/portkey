@@ -559,7 +559,7 @@
                       (repeat 20 1000))]
           (if exception
             (throw exception)
-            (.getFunctionArn result))))
+            (:function-arn result))))
       (let [arn (:function-arn (lambda/update-function-code {:function-name lambda-function-name :zip-file bb}))]
         (lambda/update-function-configuration
           (cond->
