@@ -446,24 +446,13 @@
     :principal "apigateway.amazonaws.com"
     :source-arn (str "arn:aws:execute-api:" region ":" account ":" api-id "/*/*/*")}))
 
-(defn ensure-api [lambda-function-name api-function-name parsed-path opts]
-  (let [function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
-                                   (.getFunctionConfiguration (donew com.amazonaws.services.lambda.model.GetFunctionConfigurationRequest
-                                                                     {:function-name lambda-function-name})))
-        {:keys [region account]} (-> function-configuration
-                                     .getFunctionArn
-                                     aws/parse-arn)
-        function-policy (get-function-policy lambda-function-name)]
+(defn ensure-api [lambda-function-name api-function-name swagger-doc region account]
+  (let [function-policy (get-function-policy lambda-function-name)]
     (if-some [api-id (:id (fetch-api "portkey"))]
       (do
         (apigw/put-rest-api
          {:rest-api-id api-id
-          :body (-> (aws/swagger api-function-name
-                                 (.getFunctionArn function-configuration)
-                                 parsed-path
-                                 opts)
-                    cheshire.core/generate-string
-                    (.getBytes "UTF-8"))
+          :body swagger-doc
           :fail-on-warnings true})
         (when-not (and function-policy
                        (->> function-policy
@@ -471,12 +460,7 @@
                             (filter #{(api-gw-invoke-statement region account lambda-function-name api-id)})))
           (allow-api-gw-to-invoke-lambda region account lambda-function-name api-id))
         api-id)
-      (let [api-id (:id (apigw/import-rest-api {:body (-> (aws/swagger api-function-name
-                                                                  (.getFunctionArn function-configuration)
-                                                                  parsed-path
-                                                                  opts)
-                                                     cheshire.core/generate-string
-                                                     (.getBytes "UTF-8"))
+      (let [api-id (:id (apigw/import-rest-api {:body swagger-doc
                                                 :fail-on-warnings true}))]
         (when-not (and function-policy
                        (->> function-policy
@@ -631,14 +615,21 @@ and `argnames` a collection of argument names as symbols."
                      :keeps keeps
                      :environment-variables environment-variables
                      :vpc-config vpc-config)
-        {:keys [region]} (aws/parse-arn arn)
-        id (ensure-api lambda-function-name
-                       api-function-name
-                       parsed-path
-                       {:content-type content-type
-                        :method method})]
-    (deploy-api! id stage)
-    {:url (str "https://" id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
+        {:keys [region account]} (aws/parse-arn arn)
+        swagger-doc (-> (aws/swagger api-function-name
+                                     arn
+                                     parsed-path
+                                     {:content-type content-type
+                                      :method method})
+                        cheshire.core/generate-string
+                        (.getBytes "UTF-8"))
+        api-id (ensure-api lambda-function-name
+                           api-function-name
+                           swagger-doc
+                           region
+                           account)]
+    (deploy-api! api-id stage)
+    {:url (str "https://" api-id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
 
 (defmacro mount! [f path & {:as opts :keys [live]}]
   (if-some [var-f (cond 
