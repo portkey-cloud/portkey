@@ -9,7 +9,7 @@
                  [com.esotericsoftware/kryo "4.0.0"]
                  [com.twitter/carbonite "1.4.0"
                  :exclusions [com.esotericsoftware.kryo/kryo]]
-                 [portkey/aws-clj-sdk "0.1.0-SNAPSHOT"]
+                 [com.github.portkey-cloud/aws-clj-sdk "-SNAPSHOT"]
                  [com.amazonaws/aws-java-sdk "1.11.166"]
                  [com.amazonaws/aws-lambda-java-core "1.1.0"]
                  [com.cemerick/pomegranate "0.3.1"]
@@ -17,5 +17,6 @@
                  [cheshire "5.7.1"]]
   :java-source-paths ["src/main/java"]
   :source-paths ["src/main/clojure"]
+  :repositories [["jitpack" "https://jitpack.io"]]
   :profiles {:dev {:dependencies [[com.opentable.components/otj-pg-embedded "0.7.1"]
                                   [org.clojure/java.jdbc "0.7.0"]]}})
