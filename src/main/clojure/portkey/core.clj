@@ -418,12 +418,33 @@
     (some #(when (= api-name (:name %)) %))))
 
 (defn get-function-policy [lambda-function-name]
-  (try-some (lambda/get-policy {:function-name lambda-function-name})))
+  (try-some (-> {:function-name lambda-function-name}
+                lambda/get-policy
+                :policy
+                (json/parse-string true))))
+
+(defn api-gw-invoke-statement [region account function-name api-id]
+  {:Sid (str function-name "Execution")
+   :Effect "Allow"
+   :Principal {:Service "apigateway.amazonaws.com"}
+   :Action "lambda:InvokeFunction"
+   :Resource (str "arn:aws:lambda:" region ":" account ":function:" function-name)
+   :Condition
+   {:ArnLike
+    {:AWS:SourceArn (str "arn:aws:execute-api:" region ":" account ":" api-id "/*/*/*")}}})
 
 (def get-function
   (memoize
     (fn [function-name]
       (lambda/get-function {:function-name function-name}))))
+
+(defn allow-api-gw-to-invoke-lambda [region account function-name api-id]
+  (lambda/add-permission
+   {:function-name function-name
+    :statement-id (str function-name "Execution")
+    :action "lambda:InvokeFunction"
+    :principal "apigateway.amazonaws.com"
+    :source-arn (str "arn:aws:execute-api:" region ":" account ":" api-id "/*/*/*")}))
 
 (defn ensure-api [lambda-function-name api-function-name parsed-path opts]
   (let [function-configuration (-> (build com.amazonaws.services.lambda.AWSLambdaClientBuilder)
@@ -433,52 +454,36 @@
                                      .getFunctionArn
                                      aws/parse-arn)
         function-policy (get-function-policy lambda-function-name)]
-    (if-some [id (:id (fetch-api "portkey"))]
+    (if-some [api-id (:id (fetch-api "portkey"))]
       (do
         (apigw/put-rest-api
-          {:rest-api-id id
-           :body (-> (aws/swagger api-function-name
-                      (.getFunctionArn function-configuration)
-                      parsed-path
-                      opts)
-                  cheshire.core/generate-string
-                  (.getBytes "UTF-8"))
-           :fail-on-warnings true})
-        (when-not function-policy
-          (lambda/add-permission
-            {:function-name lambda-function-name
-             :statement-id (str lambda-function-name "Execution")
-             :action "lambda:InvokeFunction"
-             :principal "apigateway.amazonaws.com"
-             :source-arn (str "arn:aws:execute-api:"
-                           region
-                           ":"
-                           account
-                           ":"
-                           id
-                           "/*/*/*")}))
-        id)
-      (let [id (:id (apigw/import-rest-api {:body (-> (aws/swagger api-function-name
+         {:rest-api-id api-id
+          :body (-> (aws/swagger api-function-name
+                                 (.getFunctionArn function-configuration)
+                                 parsed-path
+                                 opts)
+                    cheshire.core/generate-string
+                    (.getBytes "UTF-8"))
+          :fail-on-warnings true})
+        (when-not (and function-policy
+                       (->> function-policy
+                            :Statement
+                            (filter #{(api-gw-invoke-statement region account lambda-function-name api-id)})))
+          (allow-api-gw-to-invoke-lambda region account lambda-function-name api-id))
+        api-id)
+      (let [api-id (:id (apigw/import-rest-api {:body (-> (aws/swagger api-function-name
                                                                   (.getFunctionArn function-configuration)
                                                                   parsed-path
                                                                   opts)
                                                      cheshire.core/generate-string
                                                      (.getBytes "UTF-8"))
-                                            :fail-on-warnings true}))]
-        ; @viesti why no check of function-policy here?
-        (lambda/add-permission 
-          {:function-name lambda-function-name
-           :statement-id (str lambda-function-name "Execution")
-           :action "lambda:InvokeFunction"
-           :principal "apigateway.amazonaws.com"
-           :source-arn (str "arn:aws:execute-api:"
-                         region
-                         ":"
-                         account
-                         ":"
-                         id
-                         "/*/*/*")})
-        id))))
+                                                :fail-on-warnings true}))]
+        (when-not (and function-policy
+                       (->> function-policy
+                            :Statement
+                            (filter #{(api-gw-invoke-statement region account lambda-function-name api-id)})))
+          (allow-api-gw-to-invoke-lambda region account lambda-function-name api-id))
+        api-id))))
 
 (defn deploy-api! [id stage]
   (apigw/create-deployment {:stage-name stage :rest-api-id id}))
