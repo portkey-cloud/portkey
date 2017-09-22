@@ -446,7 +446,7 @@
     :principal "apigateway.amazonaws.com"
     :source-arn (str "arn:aws:execute-api:" region ":" account ":" api-id "/*/*/*")}))
 
-(defn ensure-api [lambda-function-name api-function-name swagger-doc region account]
+(defn ensure-api [lambda-function-name swagger-doc region account]
   (let [function-policy (get-function-policy lambda-function-name)]
     (if-some [api-id (:id (fetch-api "portkey"))]
       (do
@@ -593,7 +593,7 @@ and `argnames` a collection of argument names as symbols."
      :arg-paths arg-paths}))
 
 (defn mount-fn [f path {:keys [keeps content-type environment-variables vpc-config
-                               arg-names lambda-function-name api-function-name
+                               arg-names lambda-function-name
                                stage method]
                         :or {content-type "text/plain"
                              stage "repl"
@@ -616,15 +616,13 @@ and `argnames` a collection of argument names as symbols."
                      :environment-variables environment-variables
                      :vpc-config vpc-config)
         {:keys [region account]} (aws/parse-arn arn)
-        swagger-doc (-> (aws/swagger api-function-name
-                                     arn
+        swagger-doc (-> (aws/swagger arn
                                      parsed-path
                                      {:content-type content-type
                                       :method method})
                         cheshire.core/generate-string
                         (.getBytes "UTF-8"))
         api-id (ensure-api lambda-function-name
-                           api-function-name
                            swagger-doc
                            region
                            account)]
@@ -639,8 +637,7 @@ and `argnames` a collection of argument names as symbols."
     `(let [mnt!# (fn []
                    (mount-fn @~var-f ~path
                      ~(into {:arg-names `(-> ~var-f meta :arglists first)
-                             :lambda-function-name `(as-> (meta ~var-f) x# (str (:ns x#) "/" (:name x#)) (#'aws-name-munge x#))
-                             :api-function-name `(-> ~var-f meta :name name)}
+                             :lambda-function-name `(as-> (meta ~var-f) x# (str (:ns x#) "/" (:name x#)) (#'aws-name-munge x#))}
                         opts)))]
        (when ~live
          (add-watch ~var-f 

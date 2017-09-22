@@ -17,7 +17,7 @@
        function-arn
        "/invocations"))
 
-(defn proxy-swagger-doc [api-function-name function-arn {:keys [path]} {:keys [content-type]}]
+(defn proxy-swagger-doc [function-arn {:keys [path]} {:keys [content-type]}]
   {"swagger" "2.0"
    "info"
    {"version" (.format formatter (ZonedDateTime/now))
@@ -43,7 +43,7 @@
        "cacheKeyParameters" ["method.request.path.proxy"]
        "type" "aws_proxy"}}}}})
 
-(defn swagger-doc [api-function-name function-arn {:keys [path path-args query-args]} {:keys [content-type method]}]
+(defn swagger-doc [function-arn {:keys [path path-args query-args]} {:keys [content-type method]}]
   {"swagger" "2.0"
    "info" {"version" (.format formatter (ZonedDateTime/now))
            "title" "portkey"}
