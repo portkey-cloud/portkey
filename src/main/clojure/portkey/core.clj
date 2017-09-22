@@ -491,7 +491,8 @@
     security-group-ids (assoc :security-group-ids security-group-ids)
     security-groups (assoc :security-group-ids (fetch-security-group-ids (set security-groups)))))
 
-(defn deploy! [f lambda-function-name & {:keys [keeps environment-variables vpc-config]}]
+(defn deploy! [f lambda-function-name & {:keys [keeps environment-variables vpc-config]
+                                         :or {environment-variables {}}}]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f keeps))
                .toByteArray)]
