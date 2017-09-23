@@ -17,15 +17,27 @@
        function-arn
        "/invocations"))
 
-(defn proxy-swagger-doc [function-arn {:keys [path]} {:keys [content-type]}]
+(defn proxy-swagger-doc [function-arn content-type]
   {"swagger" "2.0"
-   "info"
-   {"version" (.format formatter (ZonedDateTime/now))
-    "title" "portkey"}
+   "info" {"version" (.format formatter (ZonedDateTime/now))
+           "title" "portkey"}
    "basePath" "/portkey"
    "schemes" ["https"]
    "paths"
-   {(str path "/{proxy+}")
+   {"/"
+    {"x-amazon-apigateway-any-method"
+     {"produces" [content-type]
+      "parameters" []
+      "responses" {}
+      "x-amazon-apigateway-integration"
+      {"responses" {"default" {"statusCode" "200"}}
+       "uri" (make-uri function-arn)
+       "passthroughBehavior" "when_no_match"
+       "httpMethod" "POST"
+       "cacheNamespace" "portkey"
+       "cacheKeyParameters" []
+       "type" "aws_proxy"}}}
+    "{proxy+}"
     {"x-amazon-apigateway-any-method"
      {"produces" [content-type]
       "parameters"
@@ -93,8 +105,12 @@
              "title" "Error Schema"}}})
 
 (defn swagger [function-arn
-               {:keys [path path-args query-args] :as parsed-path}
+               {:keys [path] :as parsed-path}
                {:keys [content-type method] :as opts}]
   (if (= method :get)
     (swagger-doc function-arn parsed-path opts)
-    (proxy-swagger-doc function-arn parsed-path opts)))
+    (-> (proxy-swagger-doc function-arn content-type)
+        (update "paths" #(-> %
+                             (assoc (str path "/{proxy+}") (get % "{proxy+}"))
+                             (dissoc "{proxy+}")
+                             (dissoc "/"))))))

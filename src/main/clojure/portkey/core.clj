@@ -446,9 +446,9 @@
     :principal "apigateway.amazonaws.com"
     :source-arn (str "arn:aws:execute-api:" region ":" account ":" api-id "/*/*/*")}))
 
-(defn ensure-api [lambda-function-name swagger-doc region account]
+(defn ensure-api [lambda-function-name swagger-doc region account api-name]
   (let [function-policy (get-function-policy lambda-function-name)]
-    (if-some [api-id (:id (fetch-api "portkey"))]
+    (if-some [api-id (:id (fetch-api api-name))]
       (do
         (apigw/put-rest-api
          {:rest-api-id api-id
@@ -491,8 +491,8 @@
     security-group-ids (assoc :security-group-ids security-group-ids)
     security-groups (assoc :security-group-ids (fetch-security-group-ids (set security-groups)))))
 
-(defn deploy! [f lambda-function-name & {:keys [keeps environment-variables vpc-config]
-                                         :or {environment-variables {}}}]
+(defn deploy! [f lambda-function-name {:keys [keeps environment-variables vpc-config]
+                                       :or {environment-variables {}}}]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f keeps))
                .toByteArray)]
@@ -593,13 +593,14 @@ and `argnames` a collection of argument names as symbols."
      :query-args (vals query-arg-params)
      :arg-paths arg-paths}))
 
-(defn mount-fn [f path {:keys [keeps content-type environment-variables vpc-config
+(defn mount-fn [f path {:keys [keeps content-type vpc-config
                                arg-names lambda-function-name
-                               stage method]
+                               stage method api-name]
                         :or {content-type "text/plain"
                              stage "repl"
                              method :get
-                             environment-variables {}}}]
+                             api-name "portkey"}
+                        :as opts}]
   (let [{:as parsed-path :keys [arg-paths]} (if (= method :get)
                                               (parse-path path arg-names)
                                               {:path path})
@@ -612,21 +613,19 @@ and `argnames` a collection of argument names as symbols."
                    (spit out (json/generate-string {:isBase64Encoded false
                                                     :statusCode 200
                                                     :body (f (-> method-request (get "body") (json/parse-string true)))})))))
-        arn (deploy! wrap lambda-function-name
-                     :keeps keeps
-                     :environment-variables environment-variables
-                     :vpc-config vpc-config)
-        {:keys [region account]} (aws/parse-arn arn)
+        arn (deploy! f lambda-function-name opts)
         swagger-doc (-> (aws/swagger arn
                                      parsed-path
                                      {:content-type content-type
                                       :method method})
                         cheshire.core/generate-string
                         (.getBytes "UTF-8"))
+        {:keys [region account]} (aws/parse-arn arn)
         api-id (ensure-api lambda-function-name
                            swagger-doc
                            region
-                           account)]
+                           account
+                           api-name)]
     (deploy-api! api-id stage)
     {:url (str "https://" api-id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
 
@@ -646,10 +645,47 @@ and `argnames` a collection of argument names as symbols."
        (mnt!#))
     `(mount-fn ~f ~path ~opts)))
 
+(defprotocol ResponseBody
+  (write [body]))
+
+(extend-protocol ResponseBody
+  String
+  (write [body]
+    body))
+
+(defn mount-ring! [handler & {:as opts
+                              :keys [stage api-name]
+                              :or {stage "repl"
+                                   api-name "portkey"}}]
+  (let [f @handler
+        wrap (fn [in out ctx]
+               (let [{:keys [body] :as method-request} (with-open [rdr (io/reader in)]
+                                                         (json/parse-stream rdr true))
+                     _ (println method-request)
+                     request-map {:body (-> body
+                                            json/generate-string
+                                            (.getBytes)
+                                            io/input-stream)}
+                     {:keys [body status]} (f request-map)]
+                 (spit out (json/generate-string {:statusCode status
+                                                  :isBase64Encoded false
+                                                  :body (write body)}))))
+        lambda-function-name (as-> (meta handler) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
+        arn (deploy! wrap lambda-function-name opts)
+        swagger-doc (-> (aws/proxy-swagger-doc arn "text/plain")
+                        cheshire.core/generate-string
+                        (.getBytes "UTF-8"))
+        {:keys [region account]} (aws/parse-arn arn)
+        api-id (ensure-api lambda-function-name
+                           swagger-doc
+                           region
+                           account
+                           api-name)]
+    (deploy-api! api-id stage)
+    {:url (str "https://" api-id ".execute-api." region ".amazonaws.com/" stage)}))
+
 (defn invoke [var-f]
   (lambda/invoke {:function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))}))
-
-
 
 #_(deployment-package prn)
 
