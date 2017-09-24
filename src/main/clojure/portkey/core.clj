@@ -672,7 +672,7 @@ and `argnames` a collection of argument names as symbols."
                                                   :body (write body)}))))
         lambda-function-name (as-> (meta handler) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
         arn (deploy! wrap lambda-function-name opts)
-        swagger-doc (-> (aws/proxy-swagger-doc arn "text/plain")
+        swagger-doc (-> (aws/proxy-swagger-doc arn "/" "text/plain")
                         cheshire.core/generate-string
                         (.getBytes "UTF-8"))
         {:keys [region account]} (aws/parse-arn arn)
