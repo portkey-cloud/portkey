@@ -604,14 +604,14 @@ and `argnames` a collection of argument names as symbols."
                                               (parse-path path arg-names)
                                               {:path path})
         wrap (fn [in out ctx]
-               (let [method-request (-> in slurp (json/parse-string true))]
+               (let [method-request (-> in slurp json/parse-string)]
                  (if (= method :get)
-                   (let [{:keys [params]} method-request
+                   (let [{:strs [params]} method-request
                          args (map #(get-in params %) arg-paths)]
                      (spit out (apply f args)))
                    (spit out (json/generate-string {:isBase64Encoded false
                                                     :statusCode 200
-                                                    :body (f (-> method-request :body (json/parse-string true)))})))))
+                                                    :body (f (-> method-request (get "body") (json/parse-string true)))})))))
         arn (deploy! wrap lambda-function-name
                      :keeps keeps
                      :environment-variables environment-variables
