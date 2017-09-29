@@ -31,11 +31,6 @@ Go to "https://api-id.execute-api.region.amazonaws.com/hello?name=Rich" (and wai
 1. Clone the repository and run `lein install` (portkey is still alpha so not on clojars yet).
 2. Add `[portkey "0.1.0-SNAPSHOT"]` to your project file.
 
-spec could be leveraged so that a s/fdef would automatically turn validation on the api
-
-Once a fn is mounted we can automatically update it each time it or one of
-its direct or indirect deps change!
-
 ## Master plan
 
 First steps:
@@ -57,6 +52,8 @@ Next steps:
  * support other backends than AWS Lambda
  * S3 buckets as Clojure references?
  * Track methods usage and narrow the deps graphs (bonus: remove unused methods from classes)
+ * Once a fn is mounted we can automatically update it each time it or one of its direct or indirect deps change!
+ * Add support for ring handlers
 
 ## Requirements
 
