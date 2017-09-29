@@ -28,7 +28,8 @@ Go to "https://api-id.execute-api.region.amazonaws.com/hello?name=Rich" (and wai
 
 ## Usage
 
-Add `[portkey "0.1.0-alpha"]` to your project file.
+1. Clone the repository and run `lein install` (portkey is still alpha so not on clojars yet).
+2. Add `[portkey "0.1.0-SNAPSHOT"]` to your project file.
 
 spec could be leveraged so that a s/fdef would automatically turn validation on the api
 
