@@ -714,7 +714,7 @@ and `argnames` a collection of argument names as symbols."
                            account
                            api-name)]
     (deploy-api! api-id stage)
-    {:url (str "https://" api-id ".execute-api." region ".amazonaws.com/" stage)}))
+    {:url (str "https://" api-id ".execute-api." region ".amazonaws.com/" stage path)}))
 
 (defn invoke [var-f]
   (lambda/invoke {:function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))}))
