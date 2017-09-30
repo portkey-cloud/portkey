@@ -646,12 +646,46 @@ and `argnames` a collection of argument names as symbols."
     `(mount-fn ~f ~path ~opts)))
 
 (defprotocol ResponseBody
-  (write [body]))
+  (to-string [body]))
 
 (extend-protocol ResponseBody
-  String
-  (write [body]
-    body))
+  java.io.InputStream
+  (to-string [body] (slurp body))
+  java.io.File
+  (to-string [body] (slurp body))
+  clojure.lang.ISeq
+  (to-string [body] (str/join "\n" (map to-string body)))
+  nil
+  (to-string [body] nil)
+  Object
+  (to-string [body] (.toString body)))
+
+(defn parse-headers [event]
+  (let [headers (:headers event)]
+    {:server-port (Integer/parseInt (:X-Forwarded-Port headers))}))
+
+(defn event->request [event]
+  (let [headers (:headers event)
+        request-context (:requestContext event)
+        [http-version host] (str/split (:Via headers "") #" ")]
+    {:server-port (Integer/parseInt (:X-Forwarded-Port headers))
+     :server-name host
+     :remote-addr (-> event :requestContext :identity :sourceIp)
+     :uri (:path event)
+     :query-params (:queryStringParameters event)
+     :scheme (:X-Forwarded-Proto headers)
+     :request-method (-> event :httpMethod (.toLowerCase))
+     :protocol (str "HTTP/" http-version)
+     :headers (reduce-kv (fn [acc k v]
+                           (assoc acc (-> k name (.toLowerCase) keyword) v))
+                         {}
+                         headers)
+     :portkey/lambda-event event
+     :body (-> event
+               :body
+               json/generate-string
+               (.getBytes)
+               io/input-stream)}))
 
 (defn mount-ring! [handler & {:as opts
                               :keys [stage api-name]
@@ -659,17 +693,14 @@ and `argnames` a collection of argument names as symbols."
                                    api-name "portkey"}}]
   (let [f @handler
         wrap (fn [in out ctx]
-               (let [{:keys [body] :as method-request} (with-open [rdr (io/reader in)]
-                                                         (json/parse-stream rdr true))
-                     _ (println method-request)
-                     request-map {:body (-> body
-                                            json/generate-string
-                                            (.getBytes)
-                                            io/input-stream)}
-                     {:keys [body status]} (f request-map)]
-                 (spit out (json/generate-string {:statusCode status
+               (let [event (with-open [rdr (io/reader in)]
+                             (json/parse-stream rdr true))
+                     request (assoc (event->request event) :portkey/lambda-context ctx)
+                     response (f request)]
+                 (spit out (json/generate-string {:statusCode (:status response)
                                                   :isBase64Encoded false
-                                                  :body (write body)}))))
+                                                  :headers (:headers response)
+                                                  :body (to-string (:body response))}))))
         lambda-function-name (as-> (meta handler) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
         arn (deploy! wrap lambda-function-name opts)
         swagger-doc (-> (aws/proxy-swagger-doc arn "/" "text/plain")
