@@ -688,9 +688,10 @@ and `argnames` a collection of argument names as symbols."
                io/input-stream)}))
 
 (defn mount-ring! [handler & {:as opts
-                              :keys [stage api-name]
+                              :keys [stage api-name path]
                               :or {stage "repl"
-                                   api-name "portkey"}}]
+                                   api-name "portkey"
+                                   path "/"}}]
   (let [f @handler
         wrap (fn [in out ctx]
                (let [event (with-open [rdr (io/reader in)]
@@ -703,7 +704,7 @@ and `argnames` a collection of argument names as symbols."
                                                   :body (to-string (:body response))}))))
         lambda-function-name (as-> (meta handler) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
         arn (deploy! wrap lambda-function-name opts)
-        swagger-doc (-> (aws/proxy-swagger-doc arn "/" "text/plain")
+        swagger-doc (-> (aws/proxy-swagger-doc arn path "text/plain")
                         cheshire.core/generate-string
                         (.getBytes "UTF-8"))
         {:keys [region account]} (aws/parse-arn arn)
