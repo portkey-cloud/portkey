@@ -613,7 +613,7 @@ and `argnames` a collection of argument names as symbols."
                    (spit out (json/generate-string {:isBase64Encoded false
                                                     :statusCode 200
                                                     :body (f (-> method-request (get "body") (json/parse-string true)))})))))
-        arn (deploy! f lambda-function-name opts)
+        arn (deploy! wrap lambda-function-name opts)
         swagger-doc (-> (aws/swagger arn
                                      parsed-path
                                      {:content-type content-type
