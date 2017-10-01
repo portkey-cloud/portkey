@@ -74,7 +74,6 @@
    (let [zip (java.io.File/createTempFile "portkey-core-test" "zip")]
       (.deleteOnExit zip)
       (apply pk/package! zip f *extras*)
-      (println "ZIP size=" (.length zip))
       (let [^ClassLoader cl (create-classloader (unzip zip))
             bos (java.io.ByteArrayOutputStream.)
             lambda (with-context-cl cl (.newInstance (.loadClass cl "portkey.LambdaStub")))]
