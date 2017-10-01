@@ -617,7 +617,8 @@ and `argnames` a collection of argument names as symbols."
         swagger-doc (-> (aws/swagger arn
                                      parsed-path
                                      {:content-type content-type
-                                      :method method})
+                                      :method method
+                                      :api-name api-name})
                         cheshire.core/generate-string
                         (.getBytes "UTF-8"))
         {:keys [region account]} (aws/parse-arn arn)

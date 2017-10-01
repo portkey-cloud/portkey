@@ -17,10 +17,10 @@
        function-arn
        "/invocations"))
 
-(defn proxy-swagger-doc [function-arn path content-type]
+(defn proxy-swagger-doc [function-arn path content-type api-name]
   {"swagger" "2.0"
    "info" {"version" (.format formatter (ZonedDateTime/now))
-           "title" "portkey"}
+           "title" api-name}
    "basePath" "/portkey"
    "schemes" ["https"]
    "paths"
@@ -55,10 +55,10 @@
        "cacheKeyParameters" ["method.request.path.proxy"]
        "type" "aws_proxy"}}}}})
 
-(defn swagger-doc [function-arn {:keys [path path-args query-args]} {:keys [content-type method]}]
+(defn swagger-doc [function-arn {:keys [path path-args query-args]} {:keys [content-type method api-name]}]
   {"swagger" "2.0"
    "info" {"version" (.format formatter (ZonedDateTime/now))
-           "title" "portkey"}
+           "title" api-name}
    "basePath" "/portkey"
    "schemes" ["https"]
    "paths"
