@@ -289,6 +289,8 @@
             [clj (resource-url clj)]))
     (into (class-entries (conj (:classes (bom portkey.LambdaStub)) portkey.SerializerStub)))))
 
+(def ^:dynamic *log-package* nil)
+
 (defn package!
   "Writes f as AWS Lambda deployment packge to out.
    f must be a function of 3 arguments: input, output and context. (See RequestHandler)
@@ -310,6 +312,11 @@
                   (into resources)
                   (into (class-entries classes))
                   (into (zipmap (map #(str % ".clj") fakes) (repeat (byte-array 0)))))]
+    (when-some [f (case *log-package*
+                    nil nil
+                    true (comp prn sort keys)
+                    *log-package*)]
+      (f entries))
     (zip! out entries)
     out))
 
