@@ -191,9 +191,10 @@
                      (when d
                        (alter-meta! v assoc :dynamic true)
                        (.setDynamic v))))
-                 (kryo/unfreeze root)))]
-    (when-some [new-vars (seq (remove vars (:vars bom')))]
-      (throw (ex-info "The boostrap function shouldn't use any new var." {:new-vars new-vars})))
+                 (kryo/unfreeze root)))
+        var-names (into #{} (map first) vars)]
+    (when-some [new-vars (seq (remove (comp var-names first) (:vars bom')))]
+      (throw (ex-info "The boostrap function shouldn't use any new var." {:new-vars new-vars :vars vars})))
     (-> bom'
       (update :classes into classes)
       (assoc :fakes fakes))))
