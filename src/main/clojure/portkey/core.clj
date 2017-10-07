@@ -638,21 +638,59 @@ and `argnames` a collection of argument names as symbols."
     (deploy-api! api-id stage)
     {:url (str "https://" api-id ".execute-api." region ".amazonaws.com/" stage (:path parsed-path))}))
 
+(defn make-lambda-function-name [{:keys [ns name]}]
+  (aws-name-munge (str ns "/" name)))
+
+(defn var-form [f env]
+  (cond
+    (and (symbol? f) (not (contains? env f)))
+    (list 'var f)
+    (and (seq? f) (= 'var (first f)))
+    f))
+
 (defmacro mount! [f path & {:as opts :keys [live]}]
-  (if-some [var-f (cond 
-                    (and (symbol? f) (not (contains? &env f)))
-                    (list 'var f)
-                    (and (seq? f) (= 'var (first f))) f)]
+  (if-some [var-f (var-form f &env)]
     `(let [mnt!# (fn []
                    (mount-fn @~var-f ~path
                      ~(into {:arg-names `(-> ~var-f meta :arglists first)
-                             :lambda-function-name `(as-> (meta ~var-f) x# (str (:ns x#) "/" (:name x#)) (#'aws-name-munge x#))}
+                             :lambda-function-name `(make-lambda-function-name (meta ~var-f))}
                         opts)))]
        (when ~live
-         (add-watch ~var-f 
+         (add-watch ~var-f
            :portkey/watch (fn [_# _# _# _#] (mnt!#))))
        (mnt!#))
     `(mount-fn ~f ~path ~opts)))
+
+(defn undeploy! [lambda-function-name]
+  (try
+    (println "Deleting lambda function" lambda-function-name)
+    (lambda/delete-function {:function-name lambda-function-name})
+    (catch clojure.lang.ExceptionInfo e
+      (if-not (-> e ex-data :message (#(.startsWith % "Function not found")))
+        (throw e)
+        (println "Lambda function" lambda-function-name "not found, moving on")))))
+
+(defn unmount-fn [lambda-function-name path api-name]
+  (undeploy! lambda-function-name)
+  (let [api-id (:id (fetch-api api-name))]
+    (when-first [{:keys [id]} (->> {:rest-api-id api-id
+                                    :limit 200}
+                                   (apigw/get-resources)
+                                   :items
+                                   (filter #(= path (:path %))))]
+      (println "Unmounting" path "from" api-name "API")
+      (apigw/delete-resource {:rest-api-id api-id
+                              :resource-id id}))))
+
+(defmacro unmount! [f path & {:keys [api-name]
+                              :or {api-name "portkey"}}]
+  (if (string? f)
+    `(unmount-fn ~f ~path ~api-name)
+    (let [var-f (var-form f &env)]
+      `(do
+         (unmount-fn (make-lambda-function-name (meta ~var-f)) ~path ~api-name)
+         (remove-watch ~var-f :portkey/watch)
+         nil))))
 
 (defprotocol ResponseBody
   (to-string [body]))
