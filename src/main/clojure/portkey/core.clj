@@ -670,7 +670,7 @@ and `argnames` a collection of argument names as symbols."
         (throw e)
         (println "Lambda function" lambda-function-name "not found, moving on")))))
 
-(defn unmount-fn [lambda-function-name path api-name]
+(defn unmount-fn [lambda-function-name path api-name stage]
   (undeploy! lambda-function-name)
   (let [api-id (:id (fetch-api api-name))]
     (when-first [{:keys [id]} (->> {:rest-api-id api-id
@@ -680,15 +680,17 @@ and `argnames` a collection of argument names as symbols."
                                    (filter #(= path (:path %))))]
       (println "Unmounting" path "from" api-name "API")
       (apigw/delete-resource {:rest-api-id api-id
-                              :resource-id id}))))
+                              :resource-id id})
+      (deploy-api! api-id stage))))
 
-(defmacro unmount! [f path & {:keys [api-name]
-                              :or {api-name "portkey"}}]
+(defmacro unmount! [f path & {:keys [api-name stage]
+                              :or {api-name "portkey"
+                                   stage "repl"}}]
   (if (string? f)
-    `(unmount-fn ~f ~path ~api-name)
+    `(unmount-fn ~f ~path ~api-name ~stage)
     (let [var-f (var-form f &env)]
       `(do
-         (unmount-fn (make-lambda-function-name (meta ~var-f)) ~path ~api-name)
+         (unmount-fn (make-lambda-function-name (meta ~var-f)) ~path ~api-name ~stage)
          (remove-watch ~var-f :portkey/watch)
          nil))))
 
