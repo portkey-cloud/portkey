@@ -477,8 +477,8 @@
           (allow-api-gw-to-invoke-lambda region account lambda-function-name api-id))
         api-id))))
 
-(defn deploy-api! [id stage]
-  (apigw/create-deployment {:stage-name stage :rest-api-id id}))
+(defn deploy-api! [api-id stage]
+  (apigw/create-deployment {:stage-name stage :rest-api-id api-id}))
 
 (defn fetch-subnet-ids []
   (->> (build com.amazonaws.services.ec2.AmazonEC2ClientBuilder)
