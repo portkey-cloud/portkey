@@ -692,6 +692,7 @@ and `argnames` a collection of argument names as symbols."
       `(do
          (unmount-fn (make-lambda-function-name (meta ~var-f)) ~path ~api-name ~stage)
          (remove-watch ~var-f :portkey/watch)
+         (remove-watch ~var-f :portkey/watch-ring)
          nil))))
 
 (defprotocol ResponseBody
@@ -736,22 +737,21 @@ and `argnames` a collection of argument names as symbols."
                (.getBytes)
                io/input-stream)}))
 
-(defn mount-ring! [handler & {:as opts
+(defn mount-ring-fn [handler {:as opts
                               :keys [stage api-name path]
                               :or {stage "repl"
                                    api-name "portkey"
                                    path "/"}}]
-  (let [f @handler
-        wrap (fn [in out ctx]
+  (let [wrap (fn [in out ctx]
                (let [event (with-open [rdr (io/reader in)]
                              (json/parse-stream rdr true))
                      request (assoc (event->request event) :portkey/lambda-context ctx)
-                     response (f request)]
+                     response (handler request)]
                  (spit out (json/generate-string {:statusCode (:status response)
                                                   :isBase64Encoded false
                                                   :headers (:headers response)
                                                   :body (to-string (:body response))}))))
-        lambda-function-name (as-> (meta handler) x (str (:ns x) "/" (:name x)) (aws-name-munge x))
+        lambda-function-name (make-lambda-function-name (meta handler))
         arn (deploy! wrap lambda-function-name opts)
         swagger-doc (-> (aws/proxy-swagger-doc arn path "text/plain" api-name)
                         cheshire.core/generate-string
@@ -764,6 +764,16 @@ and `argnames` a collection of argument names as symbols."
                            api-name)]
     (deploy-api! api-id stage)
     {:url (str "https://" api-id ".execute-api." region ".amazonaws.com/" stage path)}))
+
+(defmacro mount-ring! [handler & {:as opts :keys [live]}]
+  (if-some [var-handler (var-form handler &env)]
+    `(let [mnt!# (fn []
+                   (mount-ring-fn @~var-handler ~opts))]
+       (when ~live
+         (add-watch ~var-handler
+           :portkey/watch-ring (fn [_# _# _# _#] (mnt!#))))
+       (mnt!#))
+    `(mount-ring-fn ~handler ~opts)))
 
 (defn invoke [var-f]
   (lambda/invoke {:function-name (as-> (meta var-f) x (str (:ns x) "/" (:name x)) (aws-name-munge x))}))
