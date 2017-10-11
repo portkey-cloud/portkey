@@ -170,8 +170,9 @@
     (when delete-on-exit (.deleteOnExit f))
     f))
 
+(def ^:private already-instrumented (some? portkey.Agent/instrumentation))
 
-(when-not *compile-files*
+(when-not (or *compile-files* already-instrumented)
   (binding [*out* *err*]
     (println "Preparing for self instrumentation.")
     (let [loader (.getContextClassLoader (java.lang.Thread/currentThread))
@@ -182,20 +183,19 @@
                (.getMethod "attach" (into-array [String]))
                (.invoke nil (object-array [pid])))
           f (tmp-file "portkey-agent-" ".jar")]
-      (with-open [bytes-in (.getResourceAsStream loader "portkey/Agent.class")
-                  out (io/output-stream f)]
+      (with-open [out (io/output-stream f)]
         (jar! out
           {:Agent-Class "portkey.Agent"
            :Can-Redefine-Classes true
            :Can-Retransform-Classes true}
-          {"portkey/Agent.class" bytes-in}))
+          {}))
       (.loadAgent vm (.getAbsolutePath f))
       (println "Ouroboros succesfully eating its own tail!"))))
 
 ;; DO NOT MERGE WITH THE ABOVE BLOCK AS IT MODIFIES THE CLASSPATH AND THE NEXT BLOCK NEEDS TO
 ;; SEE THE MODIFICATIONS.
 
-(when-not *compile-files*
+(when-not (or *compile-files* already-instrumented)
   (binding [*out* *err*]
     (print "Instrumenting clojure.lang.Var... ")
     (.addTransformer portkey.Agent/instrumentation var-transform true)
@@ -213,7 +213,7 @@
       (when (bound? #'*bytes*)
         (set! *bytes* (assoc *bytes* class (aclone bytes)))))))
 
-(when-not *compile-files*
+(when-not (or *compile-files* already-instrumented)
   (.addTransformer portkey.Agent/instrumentation peek-bytes-transform true))
 
 (defn bytecode
