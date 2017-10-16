@@ -170,7 +170,9 @@
     (when delete-on-exit (.deleteOnExit f))
     f))
 
-(def ^:private already-instrumented (try (Class/forName "portkey.Agent" false (ClassLoader/getSystemClassLoader)) true (catch Exception _ false)))
+(def ^:private already-instrumented (try (-> (Class/forName "portkey.Agent" true (ClassLoader/getSystemClassLoader))
+                                           (.getMethod "ready" nil) (.invoke nil nil) boolean)
+                                      (catch Exception _ false)))
 
 (when-not (or *compile-files* already-instrumented)
   (binding [*out* *err*]
@@ -197,7 +199,7 @@
 ;; SEE THE MODIFICATIONS.
 
 (def ^java.lang.instrument.Instrumentation instrumentation
-  (-> "portkey.Agent" (Class/forName true (ClassLoader/getSystemClassLoader)) (.getField "instrumentation") (.get nil)))
+  (-> "portkey.Agent" (Class/forName true (ClassLoader/getSystemClassLoader)) (.getMethod "instrumentation" nil) (.invoke nil nil)))
 
 (when-not (or *compile-files* already-instrumented)
   (binding [*out* *err*]
