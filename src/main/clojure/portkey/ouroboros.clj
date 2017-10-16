@@ -170,7 +170,7 @@
     (when delete-on-exit (.deleteOnExit f))
     f))
 
-(def ^:private already-instrumented (some? portkey.Agent/instrumentation))
+(def ^:private already-instrumented (try (Class/forName "portkey.Agent" false (ClassLoader/getSystemClassLoader)) true (catch Exception _ false)))
 
 (when-not (or *compile-files* already-instrumented)
   (binding [*out* *err*]
@@ -183,24 +183,28 @@
                (.getMethod "attach" (into-array [String]))
                (.invoke nil (object-array [pid])))
           f (tmp-file "portkey-agent-" ".jar")]
-      (with-open [out (io/output-stream f)]
+      (with-open [bytes-in (.getResourceAsStream loader "portkey/Agent.class")
+                  out (io/output-stream f)]
         (jar! out
           {:Agent-Class "portkey.Agent"
            :Can-Redefine-Classes true
            :Can-Retransform-Classes true}
-          {}))
+          {"portkey/Agent.class" bytes-in}))
       (.loadAgent vm (.getAbsolutePath f))
       (println "Ouroboros succesfully eating its own tail!"))))
 
-;; DO NOT MERGE WITH THE ABOVE BLOCK AS IT MODIFIES THE CLASSPATH AND THE NEXT BLOCK NEEDS TO
+;; DO NOT MERGE THE 2 NEXT BLOCKS WITH THE ABOVE BLOCK AS IT MODIFIES THE CLASSPATH AND THE NEXT BLOCK NEEDS TO
 ;; SEE THE MODIFICATIONS.
+
+(def ^java.lang.instrument.Instrumentation instrumentation
+  (-> "portkey.Agent" (Class/forName true (ClassLoader/getSystemClassLoader)) (.getField "instrumentation") (.get nil)))
 
 (when-not (or *compile-files* already-instrumented)
   (binding [*out* *err*]
     (print "Instrumenting clojure.lang.Var... ")
-    (.addTransformer portkey.Agent/instrumentation var-transform true)
-    (.retransformClasses portkey.Agent/instrumentation (into-array [clojure.lang.Var]))
-    (.removeTransformer portkey.Agent/instrumentation var-transform)
+    (.addTransformer instrumentation var-transform true)
+    (.retransformClasses instrumentation (into-array [clojure.lang.Var]))
+    (.removeTransformer instrumentation var-transform)
     (println "done!")))
 
 (def ^:dynamic *bytes*)
@@ -214,15 +218,15 @@
         (set! *bytes* (assoc *bytes* class (aclone bytes)))))))
 
 (when-not (or *compile-files* already-instrumented)
-  (.addTransformer portkey.Agent/instrumentation peek-bytes-transform true))
+  (.addTransformer instrumentation peek-bytes-transform true))
 
 (defn bytecode
   "Returns a map of classes to bytes."
   [classes]
   (binding [*bytes* {}]
-    (.retransformClasses portkey.Agent/instrumentation (into-array Class classes))
+    (.retransformClasses instrumentation (into-array Class classes))
     *bytes*))
 
 (defn descendants [^Class class]
   (when class
-    (eduction (filter #(.isAssignableFrom class %)) (.getAllLoadedClasses portkey.Agent/instrumentation))))
+    (eduction (filter #(.isAssignableFrom class %)) (.getAllLoadedClasses instrumentation))))
