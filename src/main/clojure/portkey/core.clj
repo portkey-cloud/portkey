@@ -250,7 +250,7 @@
                       (comp
                         (map #(java.io.File. (.toURI ^java.net.URL %)))
                         (filter (fn [^java.io.File f] (and (.isFile f) (.endsWith (.getName f) ".jar")))))
-                      (.getURLs ^java.net.URLClassLoader (java.lang.ClassLoader/getSystemClassLoader)))
+                      (.getURLs ^java.net.URLClassLoader (.getClassLoader clojure.lang.RT)))
         coords (into []
                  (comp
                    (map #(.getName ^java.io.File %))
