@@ -215,3 +215,11 @@
         (java.util.TimeZone/setDefault tz)
         (System/setProperty "user.timezone" user-timezone)))))
 
+(deftest clj-http
+  (is (not (empty? (with-deps [[clj-http "3.7.0"]]
+                     (require '[clj-http.client :as http])
+                     (require '[clj-http.core :as core])
+                     (invoke (fn [in out ctx]
+                               (println core/request) ;; Force it to happen before our eyes
+                               (->> "https://www.google.com" http/get :body (spit out)))))))))
+
