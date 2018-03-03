@@ -527,8 +527,7 @@
                                                                                         {:Effect "Allow"
                                                                                          :Action ["ec2:CreateNetworkInterface"
                                                                                                   "ec2:DescribeNetworkInterfaces"
-                                                                                                  "ec2:DeleteNetworkInterface"
-                                                                                                  "kms:Decrypt"]
+                                                                                                  "ec2:DeleteNetworkInterface"]
                                                                                          :Resource "*"}]})})))))
     (if-not (try-some (get-function lambda-function-name))
       (let [arn (-> (try-some (fetch-portkey-role)) (.getRole) (.getArn))
