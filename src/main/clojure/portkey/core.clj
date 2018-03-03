@@ -517,14 +517,17 @@
                                    {:role-name "portkey"
                                     :policy-name "lambda_execution"
                                     :policy-document (json/generate-string {:Version "2012-10-17"
-                                                                            :Statement [{:Effect :Allow
+                                                                            :Statement [{:Sid "LogGroupCreation"
+                                                                                         :Effect :Allow
                                                                                          :Action "logs:CreateLogGroup"
                                                                                          :Resource "arn:aws:logs:*:*:*"}
-                                                                                        {:Effect "Allow"
+                                                                                        {:Sid "Logging"
+                                                                                         :Effect "Allow"
                                                                                          :Action ["logs:CreateLogStream"
                                                                                                   "logs:PutLogEvents"]
                                                                                          :Resource "arn:aws:logs:*:*:log-group:*:*"}
-                                                                                        {:Effect "Allow"
+                                                                                        {:Sid "VpcAccess"
+                                                                                         :Effect "Allow"
                                                                                          :Action ["ec2:CreateNetworkInterface"
                                                                                                   "ec2:DescribeNetworkInterfaces"
                                                                                                   "ec2:DeleteNetworkInterface"]
