@@ -499,8 +499,10 @@
     security-group-ids (assoc :security-group-ids security-group-ids)
     security-groups (assoc :security-group-ids (fetch-security-group-ids (set security-groups)))))
 
-(defn deploy! [f lambda-function-name {:keys [keeps environment-variables vpc-config s3]
-                                       :or {environment-variables {}}}]
+(defn deploy! [f lambda-function-name {:keys [keeps environment-variables vpc-config s3 memory-size timeout]
+                                       :or {environment-variables {}
+                                            memory-size 1536
+                                            timeout 30}}]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f keeps))
                .toByteArray)
@@ -551,8 +553,8 @@
                    :code function-code-config
                    :role arn
                    :runtime "java8"
-                   :memory-size (int 1536)
-                   :timeout (int 30)
+                   :memory-size (int memory-size)
+                   :timeout (int timeout)
                    :environment {:variables environment-variables}}
                   vpc-config
                   (assoc :vpc-config (parse-vpc-config vpc-config)))]
@@ -576,7 +578,9 @@
         (lambda/update-function-configuration
           (cond->
             {:function-name lambda-function-name
-             :environment {:variables environment-variables}}
+             :environment {:variables environment-variables}
+             :memory-size memory-size
+             :timeout timeout}
             vpc-config
             (assoc :vpc-config (parse-vpc-config vpc-config))))
         arn))))
