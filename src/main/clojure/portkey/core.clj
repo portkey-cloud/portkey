@@ -499,11 +499,15 @@
     security-group-ids (assoc :security-group-ids security-group-ids)
     security-groups (assoc :security-group-ids (fetch-security-group-ids (set security-groups)))))
 
-(defn deploy! [f lambda-function-name {:keys [keeps environment-variables vpc-config]
+(defn deploy! [f lambda-function-name {:keys [keeps environment-variables vpc-config s3]
                                        :or {environment-variables {}}}]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f keeps))
-               .toByteArray)]
+               .toByteArray)
+        function-code-config (if-let [{:keys [bucket key]} s3]
+                               {:s3-bucket bucket
+                                :s3-key (or key (str lambda-function-name ".zip"))}
+                               {:zip-file bb})]
     (when-not (try-some (fetch-portkey-role))
       (let [role (-> (build com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder)
                      (.createRole (donew com.amazonaws.services.identitymanagement.model.CreateRoleRequest
@@ -532,12 +536,19 @@
                                                                                                   "ec2:DescribeNetworkInterfaces"
                                                                                                   "ec2:DeleteNetworkInterface"]
                                                                                          :Resource "*"}]})})))))
+    (when-let [{:keys [bucket key]} s3]
+      (-> (build com.amazonaws.services.s3.AmazonS3ClientBuilder)
+          (.putObject bucket
+                      (or key (str lambda-function-name ".zip"))
+                      (java.io.ByteArrayInputStream. bb)
+                      (doto (com.amazonaws.services.s3.model.ObjectMetadata.)
+                        (.setContentLength (alength bb))))))
     (if-not (try-some (get-function lambda-function-name))
       (let [arn (-> (try-some (fetch-portkey-role)) (.getRole) (.getArn))
             req (cond->
                   {:function-name lambda-function-name
                    :handler "portkey.LambdaStub"
-                   :code {:zip-file bb}
+                   :code function-code-config
                    :role arn
                    :runtime "java8"
                    :memory-size (int 1536)
@@ -560,7 +571,8 @@
           (if exception
             (throw exception)
             (:function-arn result))))
-      (let [arn (:function-arn (lambda/update-function-code {:function-name lambda-function-name :zip-file bb}))]
+      (let [arn (:function-arn (lambda/update-function-code (merge {:function-name lambda-function-name}
+                                                                   function-code-config)))]
         (lambda/update-function-configuration
           (cond->
             {:function-name lambda-function-name

@@ -83,7 +83,9 @@ The following AWS service actions are used by portkey, define them in for exampl
         "iam:PassRole",
         "ec2:DescribeSubnets",
         "ec2:DescribeSecurityGroups",
-        "ec2:DescribeVpcs"
+        "ec2:DescribeVpcs",
+        "s3:PutObject",
+        "s3:GetObject"
         ]
     }
   ]
