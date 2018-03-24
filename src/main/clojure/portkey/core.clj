@@ -756,7 +756,7 @@ and `argnames` a collection of argument names as symbols."
                io/input-stream)}))
 
 (defn mount-ring-fn [handler {:as opts
-                              :keys [stage api-name path]
+                              :keys [stage api-name path lambda-function-name]
                               :or {stage "repl"
                                    api-name "portkey"
                                    path "/"}}]
@@ -769,7 +769,6 @@ and `argnames` a collection of argument names as symbols."
                                                   :isBase64Encoded false
                                                   :headers (:headers response)
                                                   :body (to-string (:body response))}))))
-        lambda-function-name (make-lambda-function-name (meta handler))
         arn (deploy! wrap lambda-function-name opts)
         swagger-doc (-> (aws/proxy-swagger-doc arn path "text/plain" api-name)
                         cheshire.core/generate-string
@@ -786,7 +785,9 @@ and `argnames` a collection of argument names as symbols."
 (defmacro mount-ring! [handler & {:as opts :keys [live]}]
   (if-some [var-handler (var-form handler &env)]
     `(let [mnt!# (fn []
-                   (mount-ring-fn @~var-handler ~opts))]
+                   (mount-ring-fn @~var-handler
+                     ~(into {:lambda-function-name `(make-lambda-function-name (meta ~var-handler))}
+                        opts)))]
        (when ~live
          (add-watch ~var-handler
            :portkey/watch-ring (fn [_# _# _# _#] (mnt!#))))
