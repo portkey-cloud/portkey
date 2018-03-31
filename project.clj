@@ -9,7 +9,7 @@
                  [com.esotericsoftware/kryo "4.0.0"]
                  [com.twitter/carbonite "1.4.0"
                  :exclusions [com.esotericsoftware.kryo/kryo]]
-                 [com.github.portkey-cloud/aws-clj-sdk "3273327"]
+                 [com.github.portkey-cloud/aws-clj-sdk "aeb414319a"]
                  [com.amazonaws/aws-java-sdk "1.11.166"]
                  [com.amazonaws/aws-lambda-java-core "1.1.0"]
                  [com.cemerick/pomegranate "0.3.1"]

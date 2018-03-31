@@ -501,7 +501,7 @@
 
 (defn deploy! [f lambda-function-name {:keys [keeps environment-variables vpc-config s3 memory-size timeout]
                                        :or {environment-variables {}
-                                            memory-size 1536
+                                            memory-size 3008
                                             timeout 30}}]
   (let [bb (-> (java.io.ByteArrayOutputStream.)
                (doto (package! f keeps))
