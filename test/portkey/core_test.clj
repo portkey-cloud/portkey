@@ -223,3 +223,14 @@
                                (println core/request) ;; Force it to happen before our eyes
                                (->> "https://www.google.com" http/get :body (spit out)))))))))
 
+(deftest instaparse
+  (is (not (empty? (with-deps [[instaparse "1.4.9"]]
+                     (require '[instaparse.core :as insta])
+                     (invoke (fn [in out ctx]
+                               (let [as-and-bs (insta/parser "
+S = AB*
+AB = A B
+A = 'a'+
+B = 'b'+"
+                                                             )]
+                                 (spit out (str (as-and-bs "aaaaabbbaaaabb")))))))))))
